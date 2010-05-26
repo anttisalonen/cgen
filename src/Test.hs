@@ -10,9 +10,10 @@ import qualified Data.Map as M
 import Text.ParserCombinators.Parsec
 
 data FunDecl = FunDecl {
-    funname :: String
-  , rettype :: Type
-  , params  :: [VarDecl]
+    funname     :: String
+  , rettype     :: Type
+  , params      :: [VarDecl]
+  , fnnamespace :: [String]
   }
   deriving (Eq, Read, Show)
 
@@ -24,24 +25,54 @@ data VarDecl = VarDecl {
   }
   deriving (Eq, Read, Show)
 
-header = many funDecl
+type Header = [FunDecl]
+
+type HeaderState = [String] -- current namespace stack
+
+header :: CharParser HeaderState Header
+header = do
+  spaces
+  concat <$> many oneobj
+
+oneobj :: CharParser HeaderState [FunDecl]
+oneobj = concat <$> namespace (many1 oneobj) <|> funDeclInList
+
+funDeclInList = do
+  f <- funDecl
+  return ([f])
+
+namespace :: CharParser HeaderState a -> CharParser HeaderState a
+namespace nscont = do
+    string "namespace"
+    many1 space
+    n <- option "" simpleWord
+    spaces
+    char '{'
+    spaces
+    updateState (n:)
+    ret <- nscont
+    updateState tail
+    spaces
+    char '}'
+    spaces
+    return ret
 
 funDecl = do
-    spaces
-    ft <- many1 letter <?> "function return type"
+    ft <- simpleWord <?> "function return type"
     many1 space
-    fn <- many1 letter <?> "function name"
+    fn <- simpleWord <?> "function name"
     spaces
-    char '('
+    char '(' <?> "start of function parameter list: ("
     spaces
     pars <- sepBy varDecl (char ',' >> spaces)
-    char ')'
+    char ')' <?> "end of function parameter list: )"
     char ';'
     spaces
-    return $ FunDecl fn ft pars
+    ns <- getState
+    return $ FunDecl fn ft pars ns
 
 varDecl = do
-    pts <- many1 (ptrStar <|> simpleWord)
+    pts <- many1 (ptrStar <|> (simpleWord >>= \n -> spaces >> return n))
     spaces
     return $ VarDecl (intercalate " " (init pts)) (last pts)
 
@@ -52,7 +83,6 @@ ptrStar = do
 
 simpleWord = do
   n <- many1 alphaNum
-  spaces
   return n
 
 untilEOL :: CharParser u String
@@ -154,14 +184,5 @@ completeParse input = do
         Left  err -> putStrLn $ "Could not preprocess: " ++ show err
         Right prp -> do
           putStrLn prp
-          print $ parse header "Header" prp
-
-completeParser :: String -> Either ParseError [FunDecl]
-completeParser input =
-  case parse removeComments "removeComments" input of
-    Left  err -> Left err
-    Right inp -> 
-      case runParser preprocess M.empty "preprocessor" inp of
-        Left  err -> Left err
-        Right prp -> parse header "Header" prp
+          print $ runParser header [] "Header" prp
 
