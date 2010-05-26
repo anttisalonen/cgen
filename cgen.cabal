@@ -17,7 +17,13 @@ Build-type:          Simple
 Cabal-version:       >=1.2
 
 Executable cgen
-  -- Main-is:             
-  -- Build-depends:       
+  Main-is:             Main.hs
+  Hs-Source-Dirs:      src
+  Build-depends:       base > 3 && < 5,
+                       parsec>=3.1.0,
+                       containers>=0.3.0.0,
+                       mtl>=1.1.0.0
+  Ghc-options:         -Wall -fno-warn-missing-signatures
+                       -fno-warn-unused-binds
   -- Other-modules:       
   -- Build-tools:         
