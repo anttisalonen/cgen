@@ -3,7 +3,6 @@ where
 
 import System.IO
 import Data.List
-import qualified Control.Monad.State as State
 import Control.Applicative hiding (many, (<|>), optional)
 import qualified Data.Map as M
 
@@ -43,30 +42,30 @@ funDeclInList = do
 
 namespace :: CharParser HeaderState a -> CharParser HeaderState a
 namespace nscont = do
-    string "namespace"
-    many1 space
+    _ <- string "namespace"
+    _ <- many1 space
     n <- option "" simpleWord
     spaces
-    char '{'
+    _ <- char '{'
     spaces
     updateState (n:)
     ret <- nscont
     updateState tail
     spaces
-    char '}'
+    _ <- char '}'
     spaces
     return ret
 
 funDecl = do
     ft <- simpleWord <?> "function return type"
-    many1 space
+    _ <- many1 space
     fn <- simpleWord <?> "function name"
     spaces
-    char '(' <?> "start of function parameter list: ("
+    _ <- char '(' <?> "start of function parameter list: ("
     spaces
     pars <- sepBy varDecl (char ',' >> spaces)
-    char ')' <?> "end of function parameter list: )"
-    char ';'
+    _ <- char ')' <?> "end of function parameter list: )"
+    _ <- char ';'
     spaces
     ns <- getState
     return $ FunDecl fn ft pars ns
@@ -99,21 +98,21 @@ preprocess = do
 preprocessorLine = try macroDef <|> otherMacro
 
 otherMacro = do
-    many newline
+    _ <- many newline
     spaces
-    char '#'
-    untilEOL
+    _ <- char '#'
+    _ <- untilEOL
     spaces
     return ""
 
 macroDef :: CharParser (M.Map String String) String
 macroDef = do
-    many newline
+    _ <- many newline
     spaces
-    string "#define "
+    _ <- string "#define "
     mname <- many alphaNum
     spaces
-    newline
+    _ <- newline
     mval <- untilEOL
     updateState (M.insert mname mval)
     return ""
@@ -161,12 +160,12 @@ getComment = concat <$> many1 (try blockComment <|> lineComment)
 
 blockComment :: CharParser u String
 blockComment = do -- between (string "/*") (string "*/") (many anyToken)
-  string "/*"
+  _ <- string "/*"
   manyTill anyChar (try (string "*/"))
 
 lineComment :: CharParser u String
 lineComment = do -- between (string "//") newline (many anyToken)
-  string "//"
+  _ <- string "//"
   manyTill anyChar (try newline)
 
 main :: IO ()
