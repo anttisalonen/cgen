@@ -1,4 +1,4 @@
-module Main
+module Main()
 where
 
 import System.IO
@@ -31,18 +31,27 @@ type HeaderState = [String] -- current namespace stack
 type Header = [Object]
 
 header :: CharParser HeaderState Header
-header = do
-  spaces
-  many oneobj
+header = many oneobj
 
 oneobj :: CharParser HeaderState Object
-oneobj = namespace (many1 oneobj) <|> funDecl
+oneobj = spaces >> (try (namespace (many1 oneobj)) <|> try typedef <|> funDecl)
+
+typedef :: CharParser HeaderState Object
+typedef = do
+    _ <- string "typedef"
+    allchars <- many1 typedefchar
+    spaces
+    _ <- char ';'
+    let ns = words allchars
+    return $ TypeDef (intercalate " " (init ns), last ns)
+
+typedefchar = oneOf (idChar ++ "*:<> \t")
 
 namespace :: CharParser HeaderState [Object] -> CharParser HeaderState Object
 namespace nscont = do
     _ <- string "namespace"
     _ <- many1 space
-    n <- option "" simpleWord
+    n <- option "" identifier
     spaces
     _ <- char '{'
     spaces
@@ -55,9 +64,9 @@ namespace nscont = do
     return $ Namespace n ret
 
 funDecl = do
-    ft <- simpleWord <?> "function return type"
+    ft <- identifier <?> "function return type"
     _ <- many1 space
-    fn <- simpleWord <?> "function name"
+    fn <- identifier <?> "function name"
     spaces
     _ <- char '(' <?> "start of function parameter list: ("
     spaces
@@ -69,7 +78,7 @@ funDecl = do
     return $ FunDecl fn ft pars ns
 
 varDecl = do
-    pts <- many1 (ptrStar <|> (simpleWord >>= \n -> spaces >> return n))
+    pts <- many1 (ptrStar <|> (identifier >>= \n -> spaces >> return n))
     spaces
     return $ VarDecl (intercalate " " (init pts)) (last pts)
 
@@ -78,9 +87,14 @@ ptrStar = do
   spaces
   return ns
 
-simpleWord = do
-  n <- many1 alphaNum
-  return n
+idCharInit = ['a'..'z'] ++ ['A'..'Z'] ++ "_"
+idChar = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "_"
+
+identifier :: CharParser u String
+identifier = do
+  m <- oneOf idCharInit
+  n <- many $ oneOf idChar
+  return (m:n)
 
 untilEOL :: CharParser u String
 untilEOL = many $ noneOf "\n"
