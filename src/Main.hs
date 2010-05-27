@@ -178,10 +178,8 @@ completeParse input = do
   case parse removeComments "removeComments" input of
     Left  err -> putStrLn $ "Could not remove comments: " ++ show err
     Right inp -> do
-      putStrLn inp
       case runParser preprocess M.empty "preprocessor" inp of
         Left  err -> putStrLn $ "Could not preprocess: " ++ show err
         Right prp -> do
-          putStrLn prp
           print $ runParser header [] "Header" prp
 
