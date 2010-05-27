@@ -61,7 +61,7 @@ funDecl = do
     spaces
     _ <- char '(' <?> "start of function parameter list: ("
     spaces
-    pars <- sepBy varDecl (char ',' >> spaces)
+    pars <- (try (spaces >> string "void" >> spaces >> return [])) <|> sepBy varDecl (char ',' >> spaces)
     _ <- char ')' <?> "end of function parameter list: )"
     _ <- char ';'
     spaces
