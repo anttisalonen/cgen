@@ -8,14 +8,6 @@ import qualified Data.Map as M
 
 import Text.ParserCombinators.Parsec
 
-data FunDecl = FunDecl {
-    funname     :: String
-  , rettype     :: Type
-  , params      :: [VarDecl]
-  , fnnamespace :: [String]
-  }
-  deriving (Eq, Read, Show)
-
 type Type = String
 
 data VarDecl = VarDecl {
@@ -24,23 +16,29 @@ data VarDecl = VarDecl {
   }
   deriving (Eq, Read, Show)
 
-type Header = [FunDecl]
+data Object = FunDecl {
+    funname     :: String
+  , rettype     :: Type
+  , params      :: [VarDecl]
+  , fnnamespace :: [String]
+  }
+            | Namespace String [Object]
+            | TypeDef (String, String)
+  deriving (Eq, Read, Show)
 
 type HeaderState = [String] -- current namespace stack
+
+type Header = [Object]
 
 header :: CharParser HeaderState Header
 header = do
   spaces
-  concat <$> many oneobj
+  many oneobj
 
-oneobj :: CharParser HeaderState [FunDecl]
-oneobj = concat <$> namespace (many1 oneobj) <|> funDeclInList
+oneobj :: CharParser HeaderState Object
+oneobj = namespace (many1 oneobj) <|> funDecl
 
-funDeclInList = do
-  f <- funDecl
-  return ([f])
-
-namespace :: CharParser HeaderState a -> CharParser HeaderState a
+namespace :: CharParser HeaderState [Object] -> CharParser HeaderState Object
 namespace nscont = do
     _ <- string "namespace"
     _ <- many1 space
@@ -54,7 +52,7 @@ namespace nscont = do
     spaces
     _ <- char '}'
     spaces
-    return ret
+    return $ Namespace n ret
 
 funDecl = do
     ft <- simpleWord <?> "function return type"
