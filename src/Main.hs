@@ -16,6 +16,7 @@ data ParamDecl = ParamDecl {
     varname   :: String
   , vartype   :: Type
   , varvalue  :: Maybe String
+  , vararray  :: Maybe String
   }
   deriving (Eq, Read, Show)
 
@@ -95,7 +96,7 @@ oneobj = do
     _           -> varFunDecl w
 
 enum = do
-    _ <- many1 space
+    _ <- many1 whitespace
     n <- identifier
     spaces
     _ <- char '{'
@@ -125,16 +126,27 @@ typedef = do
     let ns = words allchars
     return $ TypeDef (intercalate " " (init ns), last ns)
 
+gettype :: CharParser u String
 gettype = many1 typechar
+
+getvalue :: CharParser u String
+getvalue = quoted <|> gettype
+
+quoted :: CharParser u String
+quoted = do
+  _ <- char '"'
+  v <- manyTill anyChar (char '"')
+  return ('"' : (v ++ "\""))
 
 typechar = oneOf (idChar ++ "*:<>&")
 
-typechars = idChar ++ "*:<>&"
+typechars = idChar ++ "*:&"
 
-typedefchar = oneOf (typechars ++ " \t")
+typedefchar = oneOf (typechars ++ " \t,<>")
 
 classDecl = do
-    _ <- many1 space
+    _ <- many1 whitespace
+    optional (char '_' >> identifier >> spaces)
     n <- identifier
     spaces
     inherits <- option [] inheritDecls
@@ -152,13 +164,14 @@ classDecl = do
     return $ ClassDecl n inherits ret
 
 clcontents :: CharParser HeaderState [Object]
-clcontents = spaces >> many (optional setinheritlevel >> (try specialClassFunction <|> oneobj))
+clcontents = spaces >> many (spaces >> optional (many1 (setinheritlevel <|> frienddecl)) >> (try specialClassFunction <|> oneobj))
 
 -- constructor or destructor.
 specialClassFunction = do
   spaces
   cname <- (snd . head . classstack) <$> getState
   fn <- ((string ('~' : cname)) <|> string cname)
+  spaces
   funDecl fn ""
 
 inheritDecls = char ':' >> spaces >> sepBy inh (char ',')
@@ -166,7 +179,7 @@ inheritDecls = char ':' >> spaces >> sepBy inh (char ',')
           spaces
           l <- inheritl
           spaces
-          n <- many1 typedefchar
+          n <- gettype
           spaces
           return $ InheritDecl n l
 
@@ -182,8 +195,18 @@ inheritl = do
     spaces
     try (string "public" >> return Public) <|> try (string "protected" >> return Protected) <|> (string "private" >> return Private)
 
-setinheritlevel = do
+frienddecl = do
+    _ <- string "friend"
     spaces
+    _ <- string "class"
+    spaces
+    _ <- identifier
+    spaces
+    _ <- char ';'
+    spaces
+    return ()
+
+setinheritlevel = do
     str <- try (string "public") <|> try (string "protected") <|> string "private" 
     spaces
     _ <- char ':'
@@ -193,9 +216,11 @@ setinheritlevel = do
                "protected" -> Protected
                _           -> Private
 
+whitespace = oneOf (" \t\n\r")
+
 namespace :: CharParser HeaderState [Object] -> CharParser HeaderState Object
 namespace nscont = do
-    _ <- many1 space
+    _ <- many1 whitespace
     n <- option "" identifier
     spaces
     _ <- char '{'
@@ -208,18 +233,19 @@ namespace nscont = do
     spaces
     return $ Namespace n ret
 
-identList = sepBy1 gettype (many1 space) <?> "type"
+identList = sepBy1 gettype (many1 whitespace) <?> "type"
 
 varFunDecl :: String -> CharParser HeaderState Object
 varFunDecl ft = do
-  _ <- many1 space
+  _ <- many1 whitespace
   is <- identList
   spaces
   let alls = (ft:is)
       nm = last alls
       ns = intercalate " " (init alls)
   vis <- getVisibility <$> getState
-  (char ';' >> spaces >> return (VarDecl (ParamDecl nm ns Nothing) vis))
+  pdecl <- paramDecl (Just alls)
+  (char ';' >> spaces >> return (VarDecl pdecl vis))
     <|>
     funDecl nm ns
 
@@ -235,7 +261,7 @@ funDecl fn ft = do
     spaces
     _ <- char '(' <?> "start of function parameter list: ("
     spaces
-    pars <- (try (spaces >> string "void" >> spaces >> return [])) <|> sepBy varDecl (char ',' >> spaces)
+    pars <- (try (spaces >> string "void" >> spaces >> return [])) <|> sepBy (paramDecl Nothing) (char ',' >> spaces)
     _ <- char ')' <?> "end of function parameter list: )"
     spaces
     optional (many (identifier >> spaces))
@@ -245,11 +271,14 @@ funDecl fn ft = do
     vs <- getVisibility <$> getState
     return $ FunDecl fn ft pars ns vs
 
-varDecl = do
-    pts <- many1 (ptrStar <|> (gettype >>= \n -> spaces >> return n))
+paramDecl mv = do
+    pts <- case mv of
+      Nothing -> many1 (ptrStar <|> (gettype >>= \n -> spaces >> return n))
+      Just v  -> return v
     spaces
-    val <- optionMaybe (char '=' >> spaces >> many1 typedefchar)
-    return $ ParamDecl (last pts) (intercalate " " (init pts)) val
+    val <- optionMaybe (char '=' >> spaces >> getvalue >>= \v -> spaces >> return v)
+    arr <- optionMaybe (between (char '[') (char ']') (many (noneOf "]")) >>= \v -> spaces >> return v)
+    return $ ParamDecl (last pts) (intercalate " " (init pts)) val arr
 
 ptrStar :: CharParser u String
 ptrStar = do
