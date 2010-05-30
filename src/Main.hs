@@ -91,6 +91,7 @@ oneobj = do
   case w of
     "namespace" -> namespace (many1 oneobj)
     "class"     -> classDecl 
+    "struct"    -> structDecl
     "typedef"   -> typedef 
     "enum"      -> enum
     _           -> varFunDecl w
@@ -127,10 +128,15 @@ typedef = do
     return $ TypeDef (intercalate " " (init ns), last ns)
 
 gettype :: CharParser u String
-gettype = many1 typechar
+gettype = concat <$> many1 (many1 typechar <|> templ)
+
+templ = do
+  _ <- char '<'
+  v <- manyTill anyChar (char '>')
+  return ('<' : (v ++ ">"))
 
 getvalue :: CharParser u String
-getvalue = quoted <|> gettype
+getvalue = quoted <|> many1 valuechar
 
 quoted :: CharParser u String
 quoted = do
@@ -138,22 +144,35 @@ quoted = do
   v <- manyTill anyChar (char '"')
   return ('"' : (v ++ "\""))
 
-typechar = oneOf (idChar ++ "*:<>&")
+valuechar = oneOf valuechars
+
+valuechars = typechars ++ "."
+
+typechar = oneOf typechars
 
 typechars = idChar ++ "*:&"
 
-typedefchar = oneOf (typechars ++ " \t,<>")
+typedefchar = oneOf typedefchars
 
-classDecl = do
+typedefchars = typechars ++ " \t,<>\r\n"
+
+structDecl = classDecl' Public
+
+classDecl = classDecl' Private
+
+classDecl' lev = do
     _ <- many1 whitespace
     optional (char '_' >> identifier >> spaces)
     n <- identifier
     spaces
     inherits <- option [] inheritDecls
     spaces
+    (char ';' >> return (ClassDecl n inherits [])) <|> clconts n inherits lev
+
+clconts n inherits lev = do
     _ <- char '{'
     spaces
-    pushClass (Private, n)
+    pushClass (lev, n)
     ret <- clcontents
     popClass
     spaces
@@ -164,10 +183,17 @@ classDecl = do
     return $ ClassDecl n inherits ret
 
 clcontents :: CharParser HeaderState [Object]
-clcontents = spaces >> many (spaces >> optional (many1 (setinheritlevel <|> frienddecl)) >> (try specialClassFunction <|> oneobj))
+clcontents = do
+  spaces
+  many $ do
+    spaces
+    optional (many1 (setinheritlevel <|> frienddecl))
+    try specialClassFunction <|> oneobj
 
 -- constructor or destructor.
 specialClassFunction = do
+  spaces
+  optional (string "virtual")
   spaces
   cname <- (snd . head . classstack) <$> getState
   fn <- ((string ('~' : cname)) <|> string cname)
@@ -244,10 +270,13 @@ varFunDecl ft = do
       nm = last alls
       ns = intercalate " " (init alls)
   vis <- getVisibility <$> getState
-  pdecl <- paramDecl (Just alls)
-  (char ';' >> spaces >> return (VarDecl pdecl vis))
-    <|>
-    funDecl nm ns
+  if nm == "operator"
+    then funDecl nm ns
+    else do
+      pdecl <- paramDecl (Just alls)
+      (char ';' >> spaces >> return (VarDecl pdecl vis))
+        <|>
+        funDecl nm ns
 
 getVisibility :: HeaderState -> Maybe (InheritLevel, String)
 getVisibility h = 
@@ -258,6 +287,9 @@ getVisibility h =
 
 funDecl :: String -> String -> CharParser HeaderState Object
 funDecl fn ft = do
+    n <- if fn == "operator"
+           then spaces >> option "" (many1 (oneOf "+-=/*.-><"))
+           else return ""
     spaces
     _ <- char '(' <?> "start of function parameter list: ("
     spaces
@@ -265,20 +297,41 @@ funDecl fn ft = do
     _ <- char ')' <?> "end of function parameter list: )"
     spaces
     optional (many (identifier >> spaces))
-    _ <- string ";" <|> (char '{' >> manyTill anyChar (char '}'))
+    optional (char ':' >> many (many1 (oneOf ("()" ++ typedefchars)) >> spaces))
+    (char '{' >> ignoreBraces) <|> (char ';' >> return ())
     spaces
     ns <- namespacestack <$> getState
     vs <- getVisibility <$> getState
-    return $ FunDecl fn ft pars ns vs
+    return $ FunDecl (fn ++ n) ft pars ns vs
+
+ignoreBraces :: CharParser u ()
+ignoreBraces = ignoreBraces' (0 :: Int)
+  where ignoreBraces' n = do
+          skipMany $ noneOf "{}"
+          v <- oneOf "{}"
+          case v of
+            '}' -> case n of
+                     0 -> return ()
+                     _ -> ignoreBraces' (n - 1)
+            _   -> ignoreBraces' (n + 1)
 
 paramDecl mv = do
     pts <- case mv of
       Nothing -> many1 (ptrStar <|> (gettype >>= \n -> spaces >> return n))
       Just v  -> return v
     spaces
-    val <- optionMaybe (char '=' >> spaces >> getvalue >>= \v -> spaces >> return v)
+    val <- optionMaybe optionalParams 
     arr <- optionMaybe (between (char '[') (char ']') (many (noneOf "]")) >>= \v -> spaces >> return v)
     return $ ParamDecl (last pts) (intercalate " " (init pts)) val arr
+
+optionalParams = do
+  _ <- char '='
+  spaces 
+  v <- getvalue 
+  spaces 
+  r <- option "" (string "(" >> spaces >> string ")" >> return "()")
+  spaces 
+  return (v ++ r)
 
 ptrStar :: CharParser u String
 ptrStar = do
