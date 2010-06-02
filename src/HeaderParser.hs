@@ -362,21 +362,27 @@ getComment :: CharParser () String
 getComment = concat <$> many1 (try blockComment <|> lineComment)
 
 blockComment :: CharParser u String
-blockComment = do -- between (string "/*") (string "*/") (many anyToken)
-  _ <- string "/*"
+blockComment = do
+  _ <- try (string "/*")
   manyTill anyChar (try (string "*/"))
 
-lineComment :: CharParser u String
-lineComment = do -- between (string "//") newline (many anyToken)
-  _ <- string "//"
-  manyTill anyChar (try newline)
+eol :: CharParser u ()
+eol = 
+  (try (string "\r\n") >> return ()) <|> (oneOf "\r\n" >> return ())
 
-parseHeader :: String -> Either ParseError Header
+lineComment :: CharParser u String
+lineComment = do
+  _ <- try (string "//")
+  manyTill anyChar (try eol)
+
+parseHeader :: String -> Either (String, ParseError) Header
 parseHeader input = 
   case parse removeComments "removeComments" input of
-    Left  err -> Left err
+    Left  err -> Left (input, err)
     Right inp -> 
       case runParser preprocess M.empty "preprocessor" inp of
-        Left  err2 -> Left err2
-        Right prp  -> runParser header (HeaderState [] []) "Header" prp
+        Left  err2 -> Left (inp, err2)
+        Right prp  -> case runParser header (HeaderState [] []) "Header" prp of
+                        Left err  -> Left (prp, err)
+                        Right v   -> Right v
 
