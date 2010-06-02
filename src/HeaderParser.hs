@@ -50,7 +50,14 @@ oneobj = do
     "struct"    -> structDecl
     "typedef"   -> typedef 
     "enum"      -> enum
-    _           -> varFunDecl w
+    _           -> macro w <|> varFunDecl w
+
+-- macro is a hack.
+macro w = do
+  _ <- try (char '(' >> spaces >> optional (paramDecl Nothing) >> spaces >> char ')')
+  spaces
+  _ <- optional (char ';')
+  return $ VarDecl (ParamDecl w "macro" Nothing Nothing) Nothing
 
 enum = do
     _ <- many1 whitespace
@@ -244,7 +251,7 @@ getVisibility h =
 funDecl :: String -> String -> CharParser HeaderState Object
 funDecl fn ft = do
     n <- if fn == "operator"
-           then spaces >> option "" (try (string "()") <|> many1 (oneOf "+-=/*.-><"))
+           then spaces >> option "" (try (string "()") <|> many1 (oneOf "!+-=/*.-><"))
            else return ""
     spaces
     _ <- char '(' <?> "start of function parameter list: ("
@@ -254,7 +261,7 @@ funDecl fn ft = do
     spaces
     optional (many (identifier >> spaces))
     optional (char ':' >> many (many1 (oneOf ("()" ++ typedefchars)) >> spaces))
-    (char '{' >> ignoreBraces) <|> (char ';' >> return ())
+    optional ((char '{' >> ignoreBraces) <|> (char ';' >> return ())) -- optional because of macros
     spaces
     ns <- namespacestack <$> getState
     vs <- getVisibility <$> getState
@@ -271,6 +278,7 @@ ignoreBraces = ignoreBraces' (0 :: Int)
                      _ -> ignoreBraces' (n - 1)
             _   -> ignoreBraces' (n + 1)
 
+paramDecl :: Maybe [String] -> CharParser HeaderState ParamDecl
 paramDecl mv = do
     pts <- case mv of
       Nothing -> many1 (ptrStar <|> (gettype >>= \n -> spaces >> return n))
