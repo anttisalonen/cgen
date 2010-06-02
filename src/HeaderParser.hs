@@ -244,7 +244,7 @@ getVisibility h =
 funDecl :: String -> String -> CharParser HeaderState Object
 funDecl fn ft = do
     n <- if fn == "operator"
-           then spaces >> option "" (many1 (oneOf "+-=/*.-><"))
+           then spaces >> option "" (try (string "()") <|> many1 (oneOf "+-=/*.-><"))
            else return ""
     spaces
     _ <- char '(' <?> "start of function parameter list: ("
