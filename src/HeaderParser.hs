@@ -261,11 +261,14 @@ funDecl fn ft = do
     spaces
     optional (many (identifier >> spaces))
     optional (char ':' >> many (many1 (oneOf ("()" ++ typedefchars)) >> spaces))
-    optional ((char '{' >> ignoreBraces) <|> (char ';' >> return ())) -- optional because of macros
+    abstr <- (char '{' >> ignoreBraces >> return False) <|> 
+             (char ';' >> return False) <|> 
+             (char '=' >> spaces >> char '0' >> 
+              spaces >> char ';' >> return True)
     spaces
     ns <- namespacestack <$> getState
     vs <- getVisibility <$> getState
-    return $ FunDecl (fn ++ n) ft pars ns vs
+    return $ FunDecl (fn ++ n) ft pars ns vs abstr
 
 ignoreBraces :: CharParser u ()
 ignoreBraces = ignoreBraces' (0 :: Int)
