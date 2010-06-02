@@ -13,7 +13,7 @@ Maintainer:          ajsalonen at gmail dot com
 Stability:           Experimental
 Category:            Development
 Build-type:          Simple
--- Extra-source-files:  
+Extra-source-files:  src/HeaderParser.hs, src/HeaderData.hs
 Cabal-version:       >=1.2
 
 Executable cgen
