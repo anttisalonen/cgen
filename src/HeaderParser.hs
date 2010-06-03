@@ -243,7 +243,8 @@ varFunDecl ft = do
     else do
       pdecl <- paramDecl (Just alls)
       (optional (char '=' >> spaces >> getvalue >> spaces) >> 
-            eos >> spaces >> return (VarDecl pdecl vis))
+            (eos <|> (char ',' >> untilEOS >> return ())) >> -- just ignore all other declarations
+             spaces >> return (VarDecl pdecl vis))
         <|>
         funDecl nm ns
 
@@ -323,6 +324,9 @@ identifier = do
 
 untilEOL :: CharParser u String
 untilEOL = manyTill (anyChar) (eof <|> try (char '\n' >> return ()))
+
+untilEOS :: CharParser u String
+untilEOS = manyTill (anyChar) (eof <|> try (char ';' >> return ()))
 
 escapedEOL :: CharParser u Char
 escapedEOL = char '\\' >> newline
