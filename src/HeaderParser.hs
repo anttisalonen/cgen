@@ -109,7 +109,7 @@ quoted = do
 
 valuechar = oneOf valuechars
 
-valuechars = typechars ++ "."
+valuechars = typechars ++ ".-"
 
 typechar = oneOf typechars
 
