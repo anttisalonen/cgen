@@ -41,7 +41,7 @@ data InheritLevel = Public | Protected | Private
 
 data EnumVal = EnumVal {
     enumvaluename :: String
-  , enumvalue     :: Maybe Int
+  , enumvalue     :: Maybe String
   }
   deriving (Eq, Read, Show)
 

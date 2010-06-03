@@ -79,7 +79,7 @@ enumVal = do
     spaces
     ev <- identifier
     spaces
-    val <- optionMaybe (char '=' >> spaces >> many1 digit >>= return . read)
+    val <- optionMaybe (char '=' >> spaces >> many1 valuechar)
     spaces
     return $ EnumVal ev val
 
