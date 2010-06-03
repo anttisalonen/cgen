@@ -227,7 +227,7 @@ namespace nscont = do
     spaces
     return $ Namespace n ret
 
-identList = sepBy1 gettype (many1 whitespace) <?> "type"
+identList = many1 (gettype >>= \t -> spaces >> return t) <?> "type"
 
 varFunDecl :: String -> CharParser HeaderState Object
 varFunDecl ft = do
@@ -242,7 +242,7 @@ varFunDecl ft = do
     then funDecl nm ns
     else do
       pdecl <- paramDecl (Just alls)
-      (optional (char '=' >> spaces >> getvalue >> spaces) >> 
+      (optional (char '=' >> spaces >> getvalue) >> spaces >>
             (eos <|> (char ',' >> untilEOS >> return ())) >> -- just ignore all other declarations
              spaces >> return (VarDecl pdecl vis))
         <|>
@@ -268,7 +268,7 @@ funDecl fn ft = do
     spaces
     optional (many (identifier >> spaces))
     optional (char ':' >> many (many1 (oneOf ("()" ++ typedefchars)) >> spaces))
-    abstr <- (char '{' >> ignoreBraces >> return False) <|> 
+    abstr <- (char '{' >> ignoreBraces >> skipMany eos >> return False) <|> 
              (eos >> return False) <|> 
              (char '=' >> spaces >> char '0' >> 
               spaces >> eos >> return True)
