@@ -237,7 +237,8 @@ varFunDecl ft = do
     then funDecl nm ns
     else do
       pdecl <- paramDecl (Just alls)
-      (char ';' >> spaces >> return (VarDecl pdecl vis))
+      (optional (char '=' >> spaces >> getvalue >> spaces) >> 
+            char ';' >> spaces >> return (VarDecl pdecl vis))
         <|>
         funDecl nm ns
 
