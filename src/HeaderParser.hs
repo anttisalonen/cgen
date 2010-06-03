@@ -43,6 +43,7 @@ header = many oneobj
 oneobj :: CharParser HeaderState Object
 oneobj = do
   spaces
+  _ <- many eos
   w <- gettype
   case w of
     "namespace" -> namespace (many1 oneobj)
@@ -56,7 +57,7 @@ oneobj = do
 macro w = do
   _ <- try (char '(' >> spaces >> optional (paramDecl Nothing) >> spaces >> char ')')
   spaces
-  _ <- optional (char ';')
+  _ <- optional (eos)
   return $ VarDecl (ParamDecl w "macro" Nothing Nothing) Nothing
 
 enum = do
@@ -70,7 +71,7 @@ enum = do
     spaces
     _ <- char '}'
     spaces
-    _ <- char ';'
+    _ <- eos
     spaces
     return $ EnumDef n vals
 
@@ -86,7 +87,7 @@ typedef :: CharParser HeaderState Object
 typedef = do
     allchars <- many1 typedefchar
     spaces
-    _ <- char ';'
+    _ <- eos
     let ns = words allchars
     return $ TypeDef (intercalate " " (init ns), last ns)
 
@@ -130,7 +131,7 @@ classDecl' lev = do
     spaces
     inherits <- option [] inheritDecls
     spaces
-    (char ';' >> return (ClassDecl n inherits [])) <|> clconts n inherits lev
+    (eos >> return (ClassDecl n inherits [])) <|> clconts n inherits lev
 
 clconts n inherits lev = do
     _ <- char '{'
@@ -141,7 +142,7 @@ clconts n inherits lev = do
     spaces
     _ <- char '}'
     spaces
-    _ <- char ';'
+    _ <- eos
     spaces
     return $ ClassDecl n inherits ret
 
@@ -191,9 +192,13 @@ frienddecl = do
     spaces
     _ <- identifier
     spaces
-    _ <- char ';'
+    _ <- eos
     spaces
     return ()
+
+-- end of statement
+eos :: CharParser u ()
+eos = char ';' >> spaces >> many eos >> return ()
 
 setinheritlevel = do
     str <- try (string "public") <|> try (string "protected") <|> string "private" 
@@ -238,7 +243,7 @@ varFunDecl ft = do
     else do
       pdecl <- paramDecl (Just alls)
       (optional (char '=' >> spaces >> getvalue >> spaces) >> 
-            char ';' >> spaces >> return (VarDecl pdecl vis))
+            eos >> spaces >> return (VarDecl pdecl vis))
         <|>
         funDecl nm ns
 
@@ -263,9 +268,9 @@ funDecl fn ft = do
     optional (many (identifier >> spaces))
     optional (char ':' >> many (many1 (oneOf ("()" ++ typedefchars)) >> spaces))
     abstr <- (char '{' >> ignoreBraces >> return False) <|> 
-             (char ';' >> return False) <|> 
+             (eos >> return False) <|> 
              (char '=' >> spaces >> char '0' >> 
-              spaces >> char ';' >> return True)
+              spaces >> eos >> return True)
     spaces
     ns <- namespacestack <$> getState
     vs <- getVisibility <$> getState
