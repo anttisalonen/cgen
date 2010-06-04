@@ -243,11 +243,12 @@ oprchars = try ((string"()") <|> many1 (oneOf "!+-=/*.-><[]|&"))
 getassign = do
     v1 <- getvalue
     spaces
-    v2 <- option "" (do
-         os <- concat <$> many1 oprchars
-         spaces
-         nm <- getassign
-         return $ os ++ nm)
+    v2 <- try (char '(' >> spaces >> char ')' >> return "()") 
+             <|> option "" (do
+                   os <- concat <$> many1 oprchars
+                   spaces
+                   nm <- getassign
+                   return $ os ++ nm)
     return $ v1 ++ v2
 
 varFunDecl :: String -> CharParser HeaderState Object
