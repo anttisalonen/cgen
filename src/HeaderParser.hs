@@ -229,7 +229,16 @@ namespace nscont = do
     spaces
     return $ Namespace n ret
 
-identList = many1 ((concat <$> (many1 typename)) >>= \t -> spaces >> return t) <?> "type"
+identList = many1 ((concat <$> (many1 (try opr <|> gettype))) >>= \t -> spaces >> return t) <?> "type"
+
+opr = do
+    st <- string "operator"
+    spaces
+    vl <- oprchars
+    return $ st ++ vl
+
+oprchars :: CharParser u String
+oprchars = try ((string"()") <|> many1 (oneOf "!+-=/*.-><[]"))
 
 varFunDecl :: String -> CharParser HeaderState Object
 varFunDecl ft = do
@@ -260,7 +269,7 @@ getVisibility h =
 funDecl :: String -> String -> CharParser HeaderState Object
 funDecl fn ft = do
     n <- if fn == "operator"
-           then spaces >> option "" (try ((string "()") <|> many1 (oneOf "!+-=/*.-><[]")) >>= \v -> spaces >> return v)
+           then spaces >> option "" oprchars
            else return ""
     spaces
     _ <- char '(' <?> "start of function parameter list: ("
