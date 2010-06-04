@@ -1,6 +1,8 @@
 module Main()
 where
 
+import System.Exit
+
 import HeaderParser
 import HeaderData
 
@@ -31,9 +33,13 @@ main :: IO ()
 main = do 
   input <- getContents
   case parseHeader input of
-    Left  (_, err) -> putStrLn $ "Could not parse: " ++ show err
-    Right hdr      -> do
+    Left  (str, err) -> do
+      putStrLn str
+      putStrLn $ "Could not parse: " ++ show err
+      exitWith (ExitFailure 1)
+    Right hdr        -> do
       print hdr
       let funs = getFuns hdr
       return (map getObjName $ filter publicMemberFunction $ funs) >>= print
+      exitWith ExitSuccess
 
