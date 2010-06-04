@@ -289,7 +289,8 @@ funDecl fn ft = do
     _ <- char ')' <?> "end of function parameter list: )"
     spaces
     optional (many (identifier >> spaces))
-    optional (char ':' >> many (many1 (oneOf ("()" ++ typedefchars)) >> spaces))
+    -- constructing member variables
+    optional (char ':' >> many (many1 (digit <|> oneOf ("(.-+)" ++ typedefchars)) >> spaces))
     abstr <- (char '{' >> ignoreBraces >> skipMany eos >> return False) <|> 
              (eos >> return False) <|> 
              (char '=' >> spaces >> char '0' >> 
