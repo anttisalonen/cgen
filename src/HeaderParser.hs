@@ -153,7 +153,7 @@ clcontents = do
   spaces
   many $ do
     spaces
-    optional (many1 (setinheritlevel <|> frienddecl))
+    optional (many1 (try setinheritlevel <|> try frienddecl))
     try specialClassFunction <|> oneobj
 
 -- constructor or destructor.
@@ -238,7 +238,17 @@ opr = do
     return $ st ++ vl
 
 oprchars :: CharParser u String
-oprchars = try ((string"()") <|> many1 (oneOf "!+-=/*.-><[]"))
+oprchars = try ((string"()") <|> many1 (oneOf "!+-=/*.-><[]|&"))
+
+getassign = do
+    v1 <- getvalue
+    spaces
+    v2 <- option "" (do
+         os <- concat <$> many1 oprchars
+         spaces
+         nm <- getassign
+         return $ os ++ nm)
+    return $ v1 ++ v2
 
 varFunDecl :: String -> CharParser HeaderState Object
 varFunDecl ft = do
@@ -253,7 +263,7 @@ varFunDecl ft = do
     then funDecl nm ns
     else do
       pdecl <- paramDecl (Just alls)
-      (optional (char '=' >> spaces >> getvalue) >> spaces >>
+      (optional (char '=' >> spaces >> getassign) >> spaces >>
             (eos <|> (char ',' >> untilEOS >> return ())) >> -- just ignore all other declarations
              spaces >> return (VarDecl pdecl vis))
         <|>
@@ -312,7 +322,7 @@ paramDecl mv = do
 optionalParams = do
   _ <- char '='
   spaces 
-  v <- getvalue 
+  v <- getassign 
   spaces 
   r <- option "" (string "(" >> spaces >> string ")" >> return "()")
   spaces 
