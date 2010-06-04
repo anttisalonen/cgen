@@ -318,7 +318,7 @@ paramDecl mv = do
       Just v  -> return v
     spaces
     val <- optionMaybe optionalParams 
-    arr <- optionMaybe (between (char '[') (char ']') (many (noneOf "]")) >>= \v -> spaces >> return v)
+    arr <- optionMaybe (concat <$> many1 (between (char '[') (char ']') (many (noneOf "]")) >>= \v -> spaces >> return v))
     return $ ParamDecl (last pts) (intercalate " " (init pts)) val arr
 
 optionalParams = do
