@@ -92,7 +92,7 @@ typedef = do
     return $ TypeDef (intercalate " " (init ns), last ns)
 
 gettype :: CharParser u String
-gettype = concat <$> many1 (many1 typechar <|> templ)
+gettype = concat <$> many1 (typename <|> templ)
 
 templ = do
   _ <- char '<'
@@ -111,6 +111,8 @@ quoted = do
 valuechar = oneOf valuechars
 
 valuechars = typechars ++ ".-"
+
+typename = many1 typechar
 
 typechar = oneOf typechars
 
@@ -227,7 +229,7 @@ namespace nscont = do
     spaces
     return $ Namespace n ret
 
-identList = many1 (gettype >>= \t -> spaces >> return t) <?> "type"
+identList = many1 ((concat <$> (many1 typename)) >>= \t -> spaces >> return t) <?> "type"
 
 varFunDecl :: String -> CharParser HeaderState Object
 varFunDecl ft = do
@@ -258,7 +260,7 @@ getVisibility h =
 funDecl :: String -> String -> CharParser HeaderState Object
 funDecl fn ft = do
     n <- if fn == "operator"
-           then spaces >> option "" (try (string "()") <|> many1 (oneOf "!+-=/*.-><"))
+           then spaces >> option "" (try ((string "()") <|> many1 (oneOf "!+-=/*.-><[]")) >>= \v -> spaces >> return v)
            else return ""
     spaces
     _ <- char '(' <?> "start of function parameter list: ("
