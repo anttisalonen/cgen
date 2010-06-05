@@ -25,9 +25,12 @@ Executable cgen
                        mtl>=1.1.0.0,
                        filepath>=1.1.0.0,
                        directory>=1.0.0.0,
+                       safe>=0.2,
+                       regex-posix>=0.91,
                        template-haskell
   Ghc-options:         -Wall -fno-warn-missing-signatures
                        -fno-warn-unused-binds
+                       -fno-warn-unused-do-bind
   -- Other-modules:       
   -- Build-tools:         
 
