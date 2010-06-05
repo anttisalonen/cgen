@@ -254,7 +254,7 @@ correctFuncRetType n = n
 mangle :: [Object] -> [Object]
 mangle []     = []
 mangle (n:ns) = 
-  let num = length $ filter (== finalName n) $ map finalName ns
+  let num = length $ filter (== funname n) $ map funname ns
       m   = n{funname = funname n ++ show num}
   in if num == 0
        then n : mangle ns
