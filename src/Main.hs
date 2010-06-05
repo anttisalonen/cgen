@@ -1,12 +1,17 @@
+{-# LANGUAGE TemplateHaskell #-}
 module Main()
 where
 
 import System.Environment
 import System.Exit
+import System.Console.GetOpt
 import Data.Either
+import Data.List
+import Control.Monad
 
 import HeaderParser
 import HeaderData
+import DeriveMod
 
 getFuns :: [Object] -> [Object]
 getFuns [] = []
@@ -31,10 +36,30 @@ publicMemberFunction (FunDecl n _ _ _ (Just (Public, _)) _) = case n of
   _       -> True
 publicMemberFunction _                                      = False
 
+data Options = Options
+  {
+    outputdir  :: FilePath
+  , inputfiles :: [FilePath]
+  }
+$(deriveMods ''Options)
+
+defaultOptions :: Options
+defaultOptions = Options "" []
+
+options :: [OptDescr (Options -> Options)]
+options = [
+    Option ['o'] ["output"] (ReqArg (setOutputdir) "DIRECTORY") "output directory for the C files"
+  ]
+
 main :: IO ()
 main = do 
-  filenames <- getArgs
-  contents <- mapM readFile filenames
+  args <- getArgs
+  let (actions, rest, errs) = getOpt Permute options args
+  when (not (null errs)) $ do
+    mapM_ print errs
+    exitWith (ExitFailure 1)
+  let opts = foldl' (flip ($)) defaultOptions actions
+  contents <- mapM readFile rest
   let parses = map parseHeader contents
       (perrs, press) = partitionEithers parses
   case perrs of
