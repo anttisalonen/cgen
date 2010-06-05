@@ -178,7 +178,7 @@ handleHeader outdir incfiles excls headername objs = do
                 (funname fun)
                 (paramFormat (params fun))
             hPrintf h "{\n"
-            let prs = intercalate ", " $ map varname (params origfun)
+            let prs = intercalate ", " $ map correctRef (params origfun)
             switch (funname origfun)
               [(getClname origfun,      hPrintf h "    return new %s(%s);\n" (funname origfun) prs),
                ('~':getClname origfun,  hPrintf h "    delete this_ptr;\n")]
@@ -199,6 +199,13 @@ handleHeader outdir incfiles excls headername objs = do
                        or (map (\e -> funname f =~ e) excls) ||
                        take 8 (funname f) == "operator"
         expandFun f = correctFuncRetType . correctFuncParams . finalName . addThisPointer . extendFunc $ f
+
+-- turn a "char& param" into "*param".
+correctRef :: ParamDecl -> String
+correctRef (ParamDecl nm pt _ _) =
+  if '&' `elem` take 2 (reverse pt)
+    then '*':nm
+    else nm
 
 switch :: (Eq a) => a -> [(a, b)] -> b -> b
 switch _ []          df = df
