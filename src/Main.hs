@@ -94,6 +94,18 @@ paramFormat (p1:p2:ps) = showP p1 ++ ", " ++ paramFormat (p2:ps)
 paramFormat [p1]       = showP p1
 paramFormat []         = ""
 
+correctParam :: ParamDecl -> ParamDecl
+correctParam p = p{vartype = correctType (vartype p)} -- TODO: arrays?
+
+refToPointerParam :: ParamDecl -> ParamDecl
+refToPointerParam p = p{vartype = refToPointer (vartype p)}
+
+refToPointer :: String -> String
+refToPointer t = 
+  if last t == '&'
+    then init t ++ "*"
+    else t
+
 correctType :: String -> String
 correctType t =
   let ns = words t
@@ -106,7 +118,7 @@ sepChars st = map (sepChar st)
 
 sepChar :: String -> String -> String
 sepChar st (x:y:xs)    = if x /= ' ' && x `notElem` st && y `elem` st
-                           then x : ' ' : sepChar st (y:xs)
+                           then x {-: ' '-} : sepChar st (y:xs)
                            else x : sepChar st (y:xs)
 sepChar _  l           = l
 
@@ -144,11 +156,15 @@ handleHeader outdir incfiles excls headername objs =
         hPrintf h "#endif\n"
         hPrintf h "\n"
         forM_ (mangle funs) $ \origfun -> do
-            let exclude = lastDef ' ' (correctType $ rettype origfun) == '&' || 
+            let exclude = lastDef ' ' (correctType $ rettype origfun) == '&' || -- TODO: allow returned references
                           or (map (\e -> funname origfun =~ e) excls) ||
                           take 8 (funname origfun) == "operator"
                 fun     = finalName . extendFunc $ origfun
-            when (not exclude) $ hPrintf h "%s %s(%s);\n" (correctType $ rettype fun) (funname fun) (paramFormat (params fun))
+            when (not exclude) $ 
+                hPrintf h "%s %s(%s);\n" 
+                    (correctType $ rettype fun) 
+                    (funname fun) 
+                    (paramFormat (map (correctParam . refToPointerParam ) $ params fun))
         hPrintf h "\n"
         hPrintf h "}\n"
         hPrintf h "\n"
@@ -186,7 +202,7 @@ extendFunc n = n
 mangle :: [Object] -> [Object]
 mangle []     = []
 mangle (n:ns) = 
-  let num = length $ filter (== funname n) $ map funname ns
+  let num = length $ filter (== finalName n) $ map finalName ns
       m   = n{funname = funname n ++ show num}
   in if num == 0
        then n : mangle ns
