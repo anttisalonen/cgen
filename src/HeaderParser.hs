@@ -257,8 +257,9 @@ varFunDecl ft = do
   is <- identList
   spaces
   let alls = (ft:is)
-      nm = last alls
-      ns = intercalate " " (init alls)
+      ptrs = length $ takeWhile (== '*') (last alls)
+      nm = drop ptrs $ last alls
+      ns = intercalate " " (init alls) ++ replicate ptrs '*'
   vis <- getVisibility <$> getState
   if nm == "operator"
     then funDecl nm ns
