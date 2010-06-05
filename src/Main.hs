@@ -5,6 +5,8 @@ where
 import System.Environment
 import System.Exit
 import System.Console.GetOpt
+import System.FilePath
+import System.Directory
 import Data.Either
 import Data.List
 import Control.Monad
@@ -68,11 +70,12 @@ main = do
         putStrLn $ "Could not parse: " ++ show err
         exitWith (ExitFailure 1)
     _              -> do
-      handleParses (concat press)
+      handleParses (outputdir opts) $ zip (map takeBaseName args) (concat press)
 
-handleParses :: [Object] -> IO ()
-handleParses objs = do
-    let funs = getFuns objs
+handleParses :: FilePath -> [(FilePath, Object)] -> IO ()
+handleParses outdir objs = do
+    createDirectoryIfMissing True outdir
+    let funs = getFuns (map snd objs)
     return (map getObjName $ filter publicMemberFunction $ funs) >>= print
     exitWith ExitSuccess
 
