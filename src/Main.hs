@@ -90,6 +90,7 @@ toCapital = map toUpper
 
 showP (ParamDecl pn pt _ _) = pt ++ " " ++ pn
 
+paramFormat :: [ParamDecl] -> String
 paramFormat (p1:p2:ps) = showP p1 ++ ", " ++ paramFormat (p2:ps)
 paramFormat [p1]       = showP p1
 paramFormat []         = ""
@@ -133,7 +134,7 @@ isType "inline"  = False
 isType _         = True
 
 handleHeader :: FilePath -> [FilePath] -> [String] -> FilePath -> [Object] -> IO ()
-handleHeader outdir incfiles excls headername objs = 
+handleHeader outdir incfiles excls headername objs = do
     withFile outfile WriteMode $ \h -> do
         hPrintf h "#ifndef CGEN_%s_H\n" (toCapital (takeBaseName headername))
         hPrintf h "#define CGEN_%s_H\n" (toCapital (takeBaseName headername))
@@ -155,30 +156,64 @@ handleHeader outdir incfiles excls headername objs =
         hPrintf h "\n"
         hPrintf h "#endif\n"
         hPrintf h "\n"
-        forM_ (mangle funs) $ \origfun -> do
-            let exclude = lastDef ' ' (correctType $ rettype origfun) == '&' || -- TODO: allow returned references
-                          or (map (\e -> funname origfun =~ e) excls) ||
-                          take 8 (funname origfun) == "operator"
-                fun     = finalName . extendFunc $ origfun
-            when (not exclude) $ 
-                hPrintf h "%s %s(%s);\n" 
-                    (correctType $ rettype fun) 
-                    (funname fun) 
-                    (paramFormat (map (correctParam . refToPointerParam ) $ params fun))
+        forM_ funs $ \fun -> do
+            hPrintf h "%s %s(%s);\n" 
+                (rettype fun) 
+                (funname fun) 
+                (paramFormat (params fun))
         hPrintf h "\n"
         hPrintf h "}\n"
         hPrintf h "\n"
         hPrintf h "#endif\n"
+        hPrintf h "\n"
         hPutStrLn stderr $ "Wrote file " ++ outfile
 
+    withFile cppoutfile WriteMode $ \h -> do
+        hPrintf h "#define CGEN_OUTPUT_INTERN\n"
+        hPrintf h "#include \"%s\"" headername
+        hPrintf h "\n"
+        forM_ (zip funs allfuns) $ \(fun, origfun) -> do
+            hPrintf h "%s %s(%s)\n" 
+                (rettype fun)
+                (funname fun)
+                (paramFormat (params fun))
+            hPrintf h "{\n"
+            let prs = intercalate ", " $ map varname (params origfun)
+            switch (funname origfun)
+              [(getClname origfun,      hPrintf h "    return new %s(%s);\n" (funname origfun) prs),
+               ('~':getClname origfun,  hPrintf h "    delete this_ptr;\n")]
+              (if rettype fun == "void" 
+                 then hPrintf h "    this_ptr->%s(%s);\n" (funname origfun) prs
+                 else hPrintf h "    return this_ptr->%s(%s);\n" (funname origfun) prs)
+            hPrintf h "}\n"
+            hPrintf h "\n"
+        hPutStrLn stderr $ "Wrote file " ++ cppoutfile
+
   where outfile    = (outdir </> headername)
-        funs       = filter (\f -> publicMemberFunction f && not (abstract f)) (getFuns objs)
+        cppoutfile = (outdir </> takeBaseName headername <.> "cpp")
+        allfuns    = filter (\f -> publicMemberFunction f && not (abstract f) && not (excludeFun f)) (getFuns objs)
         namespaces = filter (not . null) $ nub $ map (headDef "") (map fnnamespace funs)
         classes    = filter (not . null) $ nub $ map getClname funs
+        funs       = mangle $ map expandFun allfuns
+        excludeFun f = lastDef ' ' (correctType $ rettype f) == '&' || -- TODO: allow returned references
+                       or (map (\e -> funname f =~ e) excls) ||
+                       take 8 (funname f) == "operator"
+        expandFun f = correctFuncRetType . correctFuncParams . finalName . addThisPointer . extendFunc $ f
+
+switch :: (Eq a) => a -> [(a, b)] -> b -> b
+switch _ []          df = df
+switch v ((n, f):ns) df
+  | v == n    = f
+  | otherwise = switch v ns df
 
 getClname :: Object -> String
 getClname (FunDecl _ _ _ _ (Just (_, n)) _) = n
 getClname _                                 = ""
+
+correctFuncParams :: Object -> Object
+correctFuncParams f@(FunDecl _ _ ps _ _ _) = 
+  f{params = map (correctParam . refToPointerParam) ps}
+correctFuncParams n                                 = n
 
 finalName :: Object -> Object
 finalName f@(FunDecl fname _ _ funns _ _) =
@@ -189,14 +224,31 @@ finalName f@(FunDecl fname _ _ funns _ _) =
   in f{funname = updname}
 finalName n = n
 
+constructorName, destructorName :: String
+constructorName = "new"
+destructorName = "delete"
+
+addThisPointer :: Object -> Object
+addThisPointer f@(FunDecl fname _ ps _ (Just (_, clname)) _)
+  | fname == constructorName = f
+  | otherwise
+    = f{params = (t:ps)}
+      where t = ParamDecl "this_ptr" (clname ++ "*") Nothing Nothing
+addThisPointer n = n
+
 extendFunc :: Object -> Object
 extendFunc f@(FunDecl fname _ _ _ (Just (_, clname)) _) 
-  | fname == clname = f{funname = "new",
+  | fname == clname = f{funname = constructorName,
                         rettype = fname ++ " *"}
-  | fname == '~':clname = f{funname = "delete",
+  | fname == '~':clname = f{funname = destructorName,
                             rettype = "void"}
   | otherwise           = f
 extendFunc n = n
+
+correctFuncRetType :: Object -> Object
+correctFuncRetType f@(FunDecl _ fr _ _ _ _)
+  = f{rettype = correctType fr}
+correctFuncRetType n = n
 
 -- o(n).
 mangle :: [Object] -> [Object]
