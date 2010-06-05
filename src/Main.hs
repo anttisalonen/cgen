@@ -13,8 +13,8 @@ import Data.List
 import Data.Char
 import Control.Monad
 import Text.Printf
-import Text.Regex.Posix
 
+import Text.Regex.Posix
 import Safe
 
 import HeaderParser
@@ -143,10 +143,12 @@ handleHeader outdir incfiles excls headername objs =
         hPrintf h "\n"
         hPrintf h "#endif\n"
         hPrintf h "\n"
-        forM_ funs $ \fun -> do
-            let exclude = or $ map (\e -> funname fun =~ e) excls
-            when (not exclude && funname fun /= "operator") $ do
-                hPrintf h "%s %s(%s);\n" (correctType $ rettype fun) (funname fun) (paramFormat (params fun))
+        forM_ (mangle funs) $ \origfun -> do
+            let exclude = lastDef ' ' (correctType $ rettype origfun) == '&' || 
+                          or (map (\e -> funname origfun =~ e) excls) ||
+                          take 8 (funname origfun) == "operator"
+                fun     = finalName . extendFunc $ origfun
+            when (not exclude) $ hPrintf h "%s %s(%s);\n" (correctType $ rettype fun) (funname fun) (paramFormat (params fun))
         hPrintf h "\n"
         hPrintf h "}\n"
         hPrintf h "\n"
@@ -154,9 +156,39 @@ handleHeader outdir incfiles excls headername objs =
         hPutStrLn stderr $ "Wrote file " ++ outfile
 
   where outfile    = (outdir </> headername)
-        funs       = filter publicMemberFunction $ getFuns objs
+        funs       = filter (\f -> publicMemberFunction f && not (abstract f)) (getFuns objs)
         namespaces = filter (not . null) $ nub $ map (headDef "") (map fnnamespace funs)
-        classes    = filter (not . null) $ nub $ map getClname (map fnvisibility funs)
-        getClname Nothing       = ""
-        getClname (Just (_, n)) = n
+        classes    = filter (not . null) $ nub $ map getClname funs
+
+getClname :: Object -> String
+getClname (FunDecl _ _ _ _ (Just (_, n)) _) = n
+getClname _                                 = ""
+
+finalName :: Object -> Object
+finalName f@(FunDecl fname _ _ funns _ _) =
+  let clname = getClname f
+      nsname = headDef "" funns
+      updname = nsname ++ (if not (null nsname) then "_" else "") ++ 
+                clname ++ (if not (null clname) then "_" else "") ++ fname
+  in f{funname = updname}
+finalName n = n
+
+extendFunc :: Object -> Object
+extendFunc f@(FunDecl fname _ _ _ (Just (_, clname)) _) 
+  | fname == clname = f{funname = "new",
+                        rettype = fname ++ " *"}
+  | fname == '~':clname = f{funname = "delete",
+                            rettype = "void"}
+  | otherwise           = f
+extendFunc n = n
+
+-- o(n).
+mangle :: [Object] -> [Object]
+mangle []     = []
+mangle (n:ns) = 
+  let num = length $ filter (== funname n) $ map funname ns
+      m   = n{funname = funname n ++ show num}
+  in if num == 0
+       then n : mangle ns
+       else m : mangle ns
 
