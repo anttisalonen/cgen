@@ -94,6 +94,32 @@ paramFormat (p1:p2:ps) = showP p1 ++ ", " ++ paramFormat (p2:ps)
 paramFormat [p1]       = showP p1
 paramFormat []         = ""
 
+correctType :: String -> String
+correctType t =
+  let ns = words t
+  in case ns of
+       []  -> ""
+       ms  -> intercalate " " $ sepChars "*" $ filter isType ms
+
+sepChars :: String -> [String] -> [String]
+sepChars st = map (sepChar st)
+
+sepChar :: String -> String -> String
+sepChar st (x:y:xs)    = if x /= ' ' && x `notElem` st && y `elem` st
+                           then x : ' ' : sepChar st (y:xs)
+                           else x : sepChar st (y:xs)
+sepChar _  l           = l
+
+isType :: String -> Bool
+isType "virtual" = False
+isType "static"  = False
+isType "const"   = False
+isType "mutable" = False
+isType "struct"  = False
+isType "union"   = False
+isType "inline"  = False
+isType _         = True
+
 handleHeader :: FilePath -> [FilePath] -> [String] -> FilePath -> [Object] -> IO ()
 handleHeader outdir incfiles excls headername objs = 
     withFile outfile WriteMode $ \h -> do
@@ -119,8 +145,8 @@ handleHeader outdir incfiles excls headername objs =
         hPrintf h "\n"
         forM_ funs $ \fun -> do
             let exclude = or $ map (\e -> funname fun =~ e) excls
-            when (not exclude) $ do
-                hPrintf h "%s %s(%s);\n" (rettype fun) (funname fun) (paramFormat (params fun))
+            when (not exclude && funname fun /= "operator") $ do
+                hPrintf h "%s %s(%s);\n" (correctType $ rettype fun) (funname fun) (paramFormat (params fun))
         hPrintf h "\n"
         hPrintf h "}\n"
         hPrintf h "\n"
