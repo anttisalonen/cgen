@@ -48,17 +48,19 @@ data Options = Options
   , inputfiles      :: [FilePath]
   , includefiles    :: [FilePath]
   , excludepatterns :: [String] 
+  , dumpmode        :: Bool
   }
 $(deriveMods ''Options)
 
 defaultOptions :: Options
-defaultOptions = Options "" [] [] []
+defaultOptions = Options "" [] [] [] False
 
 options :: [OptDescr (Options -> Options)]
 options = [
     Option ['o'] ["output"]  (ReqArg (setOutputdir) "Directory")             "output directory for the C files"
   , Option []    ["header"]  (ReqArg (\l -> modIncludefiles   (l:)) "File")  "file to include in the generated headers"
   , Option []    ["exclude"] (ReqArg (\l -> modExcludepatterns (l:)) "File") "exclude pattern for function names"
+  , Option []    ["dump"]    (NoArg  (setDumpmode True))                     "simply dump the parsed data of the header"
   ]
 
 main :: IO ()
@@ -78,7 +80,9 @@ main = do
         putStrLn $ "Could not parse: " ++ show err
         exitWith (ExitFailure 1)
     _              -> do
-      handleParses (outputdir opts) (includefiles opts) (excludepatterns opts) $ zip (map takeFileName rest) press
+      if dumpmode opts
+        then print press
+        else handleParses (outputdir opts) (includefiles opts) (excludepatterns opts) $ zip (map takeFileName rest) press
 
 handleParses :: FilePath -> [FilePath] -> [String] -> [(FilePath, [Object])] -> IO ()
 handleParses outdir incfiles excls objs = do
