@@ -399,10 +399,20 @@ getClname (FunDecl _ _ _ _ (Just (_, n)) _) = n
 getClname _                                 = ""
 
 -- change ref to pointer and separate pointer * from other chars for all params.
+-- if param has no name, create one.
 correctFuncParams :: Object -> Object
 correctFuncParams f@(FunDecl _ _ ps _ _ _) = 
-  f{params = map (correctParam . refToPointerParam) ps}
+  f{params = checkParamNames (map (correctParam . refToPointerParam) ps)}
 correctFuncParams n                                 = n
+
+checkParamNames :: [ParamDecl] -> [ParamDecl]
+checkParamNames = go (1 :: Int)
+  where go _   []     = []
+        go num (p:ps) =
+          let p' = case varname p of
+                     "" -> p{varname = (stripPtr $ vartype p) ++ (show num)}
+                     _  -> p
+          in p':(go (num + 1) ps)
 
 -- expand function name by namespace and class name.
 finalName :: Object -> Object
