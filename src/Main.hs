@@ -10,9 +10,11 @@ import System.Directory
 import System.IO
 import Data.Either
 import Data.List
+import Data.Maybe
 import Data.Char
 import Control.Monad
 import Text.Printf
+import qualified Data.Set as S
 
 import Text.Regex.Posix
 import Safe
@@ -25,16 +27,28 @@ getFuns :: [Object] -> [Object]
 getFuns [] = []
 getFuns (o:os) = 
   case o of
-    (FunDecl _ _ _ _ _ _) -> o : getFuns os
-    (Namespace _ os2)     -> getFuns os2 ++ getFuns os
-    (ClassDecl _ _ os2)   -> getFuns os2 ++ getFuns os
-    _                     -> getFuns os
+    (FunDecl _ _ _ _ _ _)   -> o : getFuns os
+    (Namespace _ os2)       -> getFuns os2 ++ getFuns os
+    (ClassDecl _ _ n _ os2) -> 
+       case n of
+         []              -> getFuns os2 ++ getFuns os
+         ((Public, _):_) -> getFuns os2 ++ getFuns os
+         _               -> getFuns os
+    _                       -> getFuns os
+
+getClasses :: [Object] -> [Object]
+getClasses [] = []
+getClasses (o:os) = 
+  case o of
+    (Namespace _ os2)       -> getClasses os2 ++ getClasses os
+    (ClassDecl _ _ _ _ os2) -> o : getClasses os2 ++ getClasses os
+    _                       -> getClasses os
 
 getObjName :: Object -> String
 getObjName (FunDecl n _ _ _ _ _) = n
 getObjName (Namespace n _ )      = n
 getObjName (TypeDef (n, _))      = n
-getObjName (ClassDecl n _ _)     = n
+getObjName (ClassDecl n _ _ _ _) = n
 getObjName (VarDecl p _)         = varname p
 getObjName (EnumDef n _)         = n
 
@@ -111,6 +125,7 @@ refToPointer t =
     then init t ++ "*"
     else t
 
+-- separate pointer * from other chars.
 correctType :: String -> String
 correctType t =
   let ns = words t
@@ -148,17 +163,21 @@ handleHeader outdir incfiles excls headername objs = do
         hPrintf h "\n"
         hPrintf h "extern \"C\"\n"
         hPrintf h "{\n"
-        hPrintf h "#ifndef CGEN_OUTPUT_INTERN\n"
-        hPrintf h "\n"
-        forM_ classes $ \cl -> do
-            hPrintf h "struct %s;\n" cl
-        hPrintf h "\n"
-        hPrintf h "#else\n"
+        -- hPrintf h "#ifndef CGEN_OUTPUT_INTERN\n"
+        -- hPrintf h "\n"
+        -- forM_ classnames $ \cl -> do
+            -- hPrintf h "struct %s;\n" cl
+        -- hPrintf h "\n"
+        -- hPrintf h "#else\n"
         hPrintf h "\n"
         forM_ namespaces $ \ns -> do
             hPrintf h "using namespace %s;\n" ns
         hPrintf h "\n"
-        hPrintf h "#endif\n"
+        forM_ typedefs $ \(td1, td2) -> do
+            hPrintf h "typedef %s %s;\n" td1 td2
+        print extratypedefs
+        -- hPrintf h "\n"
+        -- hPrintf h "#endif\n"
         hPrintf h "\n"
         forM_ funs $ \fun -> do
             hPrintf h "%s %s(%s);\n" 
@@ -197,12 +216,103 @@ handleHeader outdir incfiles excls headername objs = do
         cppoutfile = (outdir </> takeBaseName headername <.> "cpp")
         allfuns    = filter (\f -> publicMemberFunction f && not (abstract f) && not (excludeFun f)) (getFuns objs)
         namespaces = filter (not . null) $ nub $ map (headDef "") (map fnnamespace funs)
-        classes    = filter (not . null) $ nub $ map getClname funs
+        classnames = filter (not . null) $ nub $ map getObjName $ getClasses objs
+        classes    = concatMap (\nm -> filter (classHasName nm) (getClasses objs)) classnames
+        alltypedefs = catMaybes $ map getTypedef (concatMap classobjects classes)
+        usedtypedefs = usedTypedefs usedtypes alltypedefs
+        extratypedefs = extraTypedefs usedtypedefs alltypedefs -- TODO: simply use all public typedefs instead
+        typedefs   = nub $ extratypedefs ++ usedtypedefs
         funs       = mangle $ map expandFun allfuns
         excludeFun f = lastDef ' ' (correctType $ rettype f) == '&' || -- TODO: allow returned references
                        or (map (\e -> funname f =~ e) excls) ||
                        take 8 (funname f) == "operator"
-        expandFun f = correctFuncRetType . correctFuncParams . finalName . addThisPointer . extendFunc $ f
+        expandFun f = correctFuncRetType . correctFuncParams . finalName . addClassspaces classes . addThisPointer . extendFunc $ f
+        usedtypes  = getAllTypes funs
+
+-- typesInType "int" = ["int"]
+-- typesInType "map<String, Animation*>::type" = ["String", "Animation"]
+typesInType :: String -> [String]
+typesInType v =
+    case betweenAngBrackets v of
+      "" -> [stripPtr v]
+      n  -> map stripPtr $ splitBy ',' n
+
+splitBy :: Char -> String -> [String]
+splitBy c str = 
+  let (w1, rest) = break (== c) str
+  in if null rest
+       then if null w1 then [] else [w1]
+       else w1 : splitBy c (tailSafe rest)
+
+extraTypedefs :: [(String, String)] -> [(String, String)] -> [(String, String)]
+extraTypedefs ts = filter (extractSecType ts)
+
+extractSecType :: [(String, String)] -> (String, String) -> Bool
+extractSecType ts (_, t2) = 
+  let sectypes = typesInType t2
+      tsstypes = concatMap typesInType (map fst ts)
+  in (any (`elem` tsstypes) sectypes)
+
+-- "aaa < bbb, ddd> fff" = " bbb, ddd"
+betweenAngBrackets :: String -> String
+betweenAngBrackets = fst . foldr go ("", Nothing)
+  where go _   (accs, Just True)  = (accs, Just True)    -- done
+        go '>' (accs, Nothing)    = (accs, Just False)   -- start
+        go '<' (accs, Just False) = (accs, Just True)    -- finish
+        go c   (accs, Just False) = (c:accs, Just False) -- collect
+        go _   (accs, Nothing)    = (accs, Nothing)      -- continue
+
+-- filtering typedefs doesn't help - t1 may refer to private definitions.
+usedTypedefs :: S.Set String -> [(String, String)] -> [(String, String)]
+usedTypedefs s = filter (\(_, t2) -> t2 `S.member` s)
+
+getAllTypes :: [Object] -> S.Set String
+getAllTypes = S.fromList . map stripPtr . concatMap getUsedFunTypes
+
+getUsedFunTypes :: Object -> [String]
+getUsedFunTypes (FunDecl _ rt ps _ _ _) =
+  rt:(map vartype ps)
+getUsedFunTypes _ = []
+
+-- for all types of a function, turn "y" into "x::y" when y is a nested class inside x.
+addClassspaces :: [Object] -> Object -> Object
+addClassspaces classes f@(FunDecl _ rt ps _ _ _) =
+  let rt' = addClassQual classes rt
+      ps' = map (addParamClassQual classes) ps
+  in f{rettype = rt',
+       params  = ps'}
+addClassspaces _       n                         = n
+
+addParamClassQual :: [Object] -> ParamDecl -> ParamDecl
+addParamClassQual classes p@(ParamDecl _ t _ _) =
+  let t' = addClassQual classes t
+  in p{vartype = t'}
+
+addClassQual classes rt =
+  case fetchClass classes (stripPtr rt) of
+    Nothing -> rt
+    Just c  -> addNamespaceQual (map snd $ classnesting c) rt
+
+stripPtr :: String -> String
+stripPtr = stripWhitespace . takeWhile (/= '*')
+
+stripWhitespace :: String -> String
+stripWhitespace = snd . foldr go (True, "") . dropWhile (== ' ')
+  where go ' ' (True,  acc) = (True, acc)
+        go x   (_,     acc) = (False, x:acc)
+
+fetchClass classes n = headMay $ filter (classHasName n) classes
+
+addNamespaceQual :: [String] -> String -> String
+addNamespaceQual ns n = concatMap (++ "::") ns ++ n
+
+classHasName :: String -> Object -> Bool
+classHasName n (ClassDecl cn _ _ _ _) = n == cn
+classHasName _ _                      = False
+
+getTypedef :: Object -> Maybe (String, String)
+getTypedef (TypeDef t) = Just t
+getTypedef _           = Nothing
 
 -- turn a "char& param" into "*param".
 correctRef :: ParamDecl -> String
@@ -221,11 +331,13 @@ getClname :: Object -> String
 getClname (FunDecl _ _ _ _ (Just (_, n)) _) = n
 getClname _                                 = ""
 
+-- change ref to pointer and separate pointer * from other chars for all params.
 correctFuncParams :: Object -> Object
 correctFuncParams f@(FunDecl _ _ ps _ _ _) = 
   f{params = map (correctParam . refToPointerParam) ps}
 correctFuncParams n                                 = n
 
+-- expand function name by namespace and class name.
 finalName :: Object -> Object
 finalName f@(FunDecl fname _ _ funns _ _) =
   let clname = getClname f
@@ -247,6 +359,7 @@ addThisPointer f@(FunDecl fname _ ps _ (Just (_, clname)) _)
       where t = ParamDecl "this_ptr" (clname ++ "*") Nothing Nothing
 addThisPointer n = n
 
+-- correct constructors and destructors.
 extendFunc :: Object -> Object
 extendFunc f@(FunDecl fname _ _ _ (Just (_, clname)) _) 
   | fname == clname = f{funname = constructorName,
@@ -256,6 +369,7 @@ extendFunc f@(FunDecl fname _ _ _ (Just (_, clname)) _)
   | otherwise           = f
 extendFunc n = n
 
+-- separate pointer * from other chars in function return type.
 correctFuncRetType :: Object -> Object
 correctFuncRetType f@(FunDecl _ fr _ _ _ _)
   = f{rettype = correctType fr}

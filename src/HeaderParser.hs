@@ -133,9 +133,11 @@ classDecl' lev = do
     spaces
     inherits <- option [] inheritDecls
     spaces
-    (eos >> return (ClassDecl n inherits [])) <|> clconts n inherits lev
+    ns <- namespacestack <$> getState
+    cs <- classstack <$> getState
+    (eos >> return (ClassDecl n inherits cs ns [])) <|> clconts cs ns n inherits lev
 
-clconts n inherits lev = do
+clconts cs ns n inherits lev = do
     _ <- char '{'
     spaces
     pushClass (lev, n)
@@ -146,7 +148,7 @@ clconts n inherits lev = do
     spaces
     _ <- eos
     spaces
-    return $ ClassDecl n inherits ret
+    return $ ClassDecl n inherits cs ns ret
 
 clcontents :: CharParser HeaderState [Object]
 clcontents = do

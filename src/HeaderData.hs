@@ -22,9 +22,11 @@ data Object = FunDecl {
             | Namespace String [Object]
             | TypeDef (String, String)
             | ClassDecl {
-                classname     :: String
-              , classinherits :: [InheritDecl]
-              , classobjects  :: [Object]
+                classname      :: String
+              , classinherits  :: [InheritDecl]
+              , classnesting   :: [(InheritLevel, String)]
+              , classnamespace :: [String]
+              , classobjects   :: [Object]
               }
             | VarDecl ParamDecl (Maybe (InheritLevel, String))
             | EnumDef String [EnumVal]
