@@ -329,7 +329,10 @@ paramDecl mv = do
     spaces
     val <- optionMaybe optionalParams 
     arr <- optionMaybe (concat <$> many1 (between (char '[') (char ']') (many (noneOf "]")) >>= \v -> spaces >> return v))
-    return $ ParamDecl (last pts) (intercalate " " (init pts)) val arr
+    if '*' `elem` last pts
+      -- pointer as "variable name" => no variable name given
+      then return $ ParamDecl "" (intercalate " " pts) val arr
+      else return $ ParamDecl (last pts) (intercalate " " (init pts)) val arr
 
 optionalParams = do
   _ <- char '='
