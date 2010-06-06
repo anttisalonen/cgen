@@ -325,7 +325,7 @@ ignoreBraces = ignoreBraces' (0 :: Int)
 paramDecl :: Maybe [String] -> CharParser HeaderState ParamDecl
 paramDecl mv = do
     pts <- case mv of
-      Nothing -> many1 (ptrStar <|> (gettype >>= \n -> spaces >> return n))
+      Nothing -> many1 (refMark <|> ptrStar <|> (gettype >>= \n -> spaces >> return n))
       Just v  -> return v
     spaces
     val <- optionMaybe optionalParams 
@@ -343,6 +343,12 @@ optionalParams = do
   r <- option "" (string "(" >> spaces >> string ")" >> return "()")
   spaces 
   return (v ++ r)
+
+refMark :: CharParser u String
+refMark = do
+  c <- char '&'
+  spaces
+  return [c]
 
 ptrStar :: CharParser u String
 ptrStar = do
