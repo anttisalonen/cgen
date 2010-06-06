@@ -175,7 +175,6 @@ handleHeader outdir incfiles excls headername objs = do
         hPrintf h "\n"
         forM_ typedefs $ \(td1, td2) -> do
             hPrintf h "typedef %s %s;\n" td1 td2
-        print extratypedefs
         -- hPrintf h "\n"
         -- hPrintf h "#endif\n"
         hPrintf h "\n"
