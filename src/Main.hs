@@ -225,7 +225,7 @@ handleHeader outdir incfiles excls headername objs = do
                 (funname fun)
                 (paramFormat (params fun))
             hPrintf h "{\n"
-            let prs = intercalate ", " $ map correctRef (params origfun)
+            let prs = intercalate ", " $ map correctRef (checkParamNames $ params origfun)
             switch (funname origfun)
               [(getClname origfun,      hPrintf h "    return new %s(%s);\n" (stripPtr $ rettype fun) prs),
                ('~':getClname origfun,  hPrintf h "    delete this_ptr;\n")]
@@ -405,14 +405,16 @@ correctFuncParams f@(FunDecl _ _ ps _ _ _) =
   f{params = checkParamNames (map (correctParam . refToPointerParam) ps)}
 correctFuncParams n                                 = n
 
+-- for each unnamed parameter,
+-- create a parameter name of (type) ++ running index.
 checkParamNames :: [ParamDecl] -> [ParamDecl]
 checkParamNames = go (1 :: Int)
-  where go _   []     = []
-        go num (p:ps) =
-          let p' = case varname p of
-                     "" -> p{varname = (stripPtr $ vartype p) ++ (show num)}
-                     _  -> p
-          in p':(go (num + 1) ps)
+  where go _ []     = []
+        go n (p:ps) =
+          let (p', n') = case varname p of
+                           "" -> (p{varname = (stripPtr $ vartype p) ++ (show n)}, n + 1)
+                           _  -> (p, n)
+          in p':(go n' ps)
 
 -- expand function name by namespace and class name.
 finalName :: Object -> Object
