@@ -62,19 +62,21 @@ data Options = Options
   , inputfiles      :: [FilePath]
   , includefiles    :: [FilePath]
   , excludepatterns :: [String] 
+  , excludebases    :: [String]
   , dumpmode        :: Bool
   }
 $(deriveMods ''Options)
 
 defaultOptions :: Options
-defaultOptions = Options "" [] [] [] False
+defaultOptions = Options "" [] [] [] [] False
 
 options :: [OptDescr (Options -> Options)]
 options = [
-    Option ['o'] ["output"]  (ReqArg (setOutputdir) "Directory")             "output directory for the C files"
-  , Option []    ["header"]  (ReqArg (\l -> modIncludefiles   (l:)) "File")  "file to include in the generated headers"
-  , Option []    ["exclude"] (ReqArg (\l -> modExcludepatterns (l:)) "File") "exclude pattern for function names"
-  , Option []    ["dump"]    (NoArg  (setDumpmode True))                     "simply dump the parsed data of the header"
+    Option ['o'] ["output"]       (ReqArg (setOutputdir) "Directory")             "output directory for the C files"
+  , Option []    ["header"]       (ReqArg (\l -> modIncludefiles    (l:)) "File") "file to include in the generated headers"
+  , Option []    ["exclude"]      (ReqArg (\l -> modExcludepatterns (l:)) "File") "exclude pattern for function names"
+  , Option []    ["exclude-base"] (ReqArg (\l -> modExcludebases    (l:)) "File") "exclude pattern for required base classes"
+  , Option []    ["dump"]         (NoArg  (setDumpmode True))                     "simply dump the parsed data of the header"
   ]
 
 main :: IO ()
@@ -96,13 +98,26 @@ main = do
     _              -> do
       if dumpmode opts
         then print press
-        else handleParses (outputdir opts) (includefiles opts) (excludepatterns opts) $ zip (map takeFileName rest) press
+        else handleParses (outputdir opts) (includefiles opts) (excludepatterns opts) (excludebases opts) $ zip (map takeFileName rest) press
 
-handleParses :: FilePath -> [FilePath] -> [String] -> [(FilePath, [Object])] -> IO ()
-handleParses outdir incfiles excls objs = do
+handleParses :: FilePath -> [FilePath] -> [String] -> [String] -> [(FilePath, [Object])] -> IO ()
+handleParses outdir incfiles excls exclbases objs = do
     createDirectoryIfMissing True outdir
+    checkSuperClasses exclbases (concatMap snd objs)
     mapM_ (uncurry $ handleHeader outdir incfiles excls) objs
     exitWith ExitSuccess
+
+checkSuperClasses :: [String] -> [Object] -> IO ()
+checkSuperClasses excls objs = do
+    let classes       = nub $ getClasses objs
+        superclasses  = map inheritname $ filter (\i -> inheritlevel i == Public) $ concatMap classinherits classes
+        missing       = S.difference (S.fromList superclasses) (S.fromList $ map getObjName classes)
+        missingrest   = S.filter (\s -> not $ or (map (\e -> s =~ e) excls)) missing
+    when (not $ S.null missingrest) $ do
+        hPutStrLn stderr "Error: the following base classes could not be found: "
+        forM_ (S.toList missingrest) $ \s -> do
+            hPrintf stderr "    %-40s\n" s
+        exitWith (ExitFailure 3)
 
 toCapital = map toUpper
 
