@@ -17,6 +17,7 @@ data Object = FunDecl {
               , params       :: [ParamDecl]
               , fnnamespace  :: [String]
               , fnvisibility :: Maybe (InheritLevel, String)
+              , constclass   :: Bool
               , abstract     :: Bool
               }
             | Namespace String [Object]

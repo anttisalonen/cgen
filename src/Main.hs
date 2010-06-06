@@ -27,7 +27,7 @@ getFuns :: [Object] -> [Object]
 getFuns [] = []
 getFuns (o:os) = 
   case o of
-    (FunDecl _ _ _ _ _ _)   -> o : getFuns os
+    (FunDecl _ _ _ _ _ _ _) -> o : getFuns os
     (Namespace _ os2)       -> getFuns os2 ++ getFuns os
     (ClassDecl _ _ n _ os2) -> 
        case n of
@@ -45,7 +45,7 @@ getClasses (o:os) =
     _                       -> getClasses os
 
 getObjName :: Object -> String
-getObjName (FunDecl n _ _ _ _ _) = n
+getObjName (FunDecl n _ _ _ _ _ _) = n
 getObjName (Namespace n _ )      = n
 getObjName (TypeDef (n, _))      = n
 getObjName (ClassDecl n _ _ _ _) = n
@@ -53,7 +53,7 @@ getObjName (VarDecl p _)         = varname p
 getObjName (EnumDef n _ _)       = n
 
 publicMemberFunction :: Object -> Bool
-publicMemberFunction (FunDecl _ _ _ _ (Just (Public, _)) _) = True
+publicMemberFunction (FunDecl _ _ _ _ (Just (Public, _)) _ _) = True
 publicMemberFunction _                                      = False
 
 data Options = Options
@@ -138,6 +138,8 @@ paramFormat (p1:p2:ps) = showP p1 ++ ", " ++ paramFormat (p2:ps)
 paramFormat [p1]       = showP p1
 paramFormat []         = ""
 
+-- separate pointer * from other chars.
+-- remove keywords such as virtual, static, etc.
 correctParam :: ParamDecl -> ParamDecl
 correctParam p = p{vartype = correctType (vartype p)} -- TODO: arrays?
 
@@ -262,19 +264,25 @@ handleHeader outdir incfiles excls headername objs = do
         excludeFun f = lastDef ' ' (correctType $ rettype f) == '&' || -- TODO: allow returned references
                        or (map (\e -> funname f =~ e) excls) ||
                        take 8 (funname f) == "operator"
-        expandFun f = addClassspaces allenums classes . correctFuncRetType . correctFuncParams . finalName . addThisPointer . extendFunc $ f
+        expandFun f = addConstness . -- add const keyword if the function is const
+                      addClassspaces allenums classes . -- add qualification when necessary
+                      correctFuncRetType . -- remove keywords from return type
+                      correctFuncParams . -- ref to pointer, create param name if none, remove keywords
+                      finalName . -- expand function name by class and namespace
+                      addThisPointer .  -- 1st parameter
+                      extendFunc $ f -- constructor & destructor handling
         usedtypes  = getAllTypes funs
 
 abstractConstructor :: [Object] -> Object -> Bool
-abstractConstructor classes (FunDecl fn _ _ _ (Just (_, _)) _) =
+abstractConstructor classes (FunDecl fn _ _ _ (Just (_, _)) _ _) =
   case fetchClass classes fn of
     Nothing -> False
     Just cl -> any isAbstractFun (map snd $ classobjects cl)
 abstractConstructor _       _                                  = False
 
 isAbstractFun :: Object -> Bool
-isAbstractFun (FunDecl _ _ _ _ _ a) = a
-isAbstractFun _                     = False
+isAbstractFun (FunDecl _ _ _ _ _ _ a) = a
+isAbstractFun _                       = False
 
 -- typesInType "int" = ["int"]
 -- typesInType "map<String, Animation*>::type" = ["String", "Animation"]
@@ -317,13 +325,13 @@ getAllTypes :: [Object] -> S.Set String
 getAllTypes = S.fromList . map stripPtr . concatMap getUsedFunTypes
 
 getUsedFunTypes :: Object -> [String]
-getUsedFunTypes (FunDecl _ rt ps _ _ _) =
+getUsedFunTypes (FunDecl _ rt ps _ _ _ _) =
   rt:(map vartype ps)
 getUsedFunTypes _ = []
 
 -- for all types of a function, turn "y" into "x::y" when y is a nested class inside x.
 addClassspaces :: [Object] -> [Object] -> Object -> Object
-addClassspaces enums classes f@(FunDecl _ rt ps _ _ _) =
+addClassspaces enums classes f@(FunDecl _ rt ps _ _ _ _) =
   let rt' = addClassQual enums classes rt
       ps' = map (addParamClassQual enums classes) ps
   in f{rettype = rt',
@@ -400,13 +408,14 @@ switch v ((n, f):ns) df
   | otherwise = switch v ns df
 
 getClname :: Object -> String
-getClname (FunDecl _ _ _ _ (Just (_, n)) _) = n
+getClname (FunDecl _ _ _ _ (Just (_, n)) _ _) = n
 getClname _                                 = ""
 
 -- change ref to pointer and separate pointer * from other chars for all params.
 -- if param has no name, create one.
+-- remove keywords such as virtual, static, etc.
 correctFuncParams :: Object -> Object
-correctFuncParams f@(FunDecl _ _ ps _ _ _) = 
+correctFuncParams f@(FunDecl _ _ ps _ _ _ _) = 
   f{params = checkParamNames (map (correctParam . refToPointerParam) ps)}
 correctFuncParams n                                 = n
 
@@ -423,7 +432,7 @@ checkParamNames = go (1 :: Int)
 
 -- expand function name by namespace and class name.
 finalName :: Object -> Object
-finalName f@(FunDecl fname _ _ funns _ _) =
+finalName f@(FunDecl fname _ _ funns _ _ _) =
   let clname = getClname f
       nsname = headDef "" funns
       updname = nsname ++ (if not (null nsname) then "_" else "") ++ 
@@ -436,16 +445,18 @@ constructorName = "new"
 destructorName = "delete"
 
 addThisPointer :: Object -> Object
-addThisPointer f@(FunDecl fname _ ps _ (Just (_, clname)) _)
+addThisPointer f@(FunDecl fname _ ps _ (Just (_, clname)) _ _)
   | fname == constructorName = f
   | otherwise
     = f{params = (t:ps)}
-      where t = ParamDecl "this_ptr" (clname ++ "*") Nothing Nothing
+      where t = ParamDecl this_ptrName (clname ++ "*") Nothing Nothing
 addThisPointer n = n
+
+this_ptrName = "this_ptr"
 
 -- correct constructors and destructors.
 extendFunc :: Object -> Object
-extendFunc f@(FunDecl fname _ _ _ (Just (_, clname)) _) 
+extendFunc f@(FunDecl fname _ _ _ (Just (_, clname)) _ _) 
   | fname == clname = f{funname = constructorName,
                         rettype = fname ++ " *"}
   | fname == '~':clname = f{funname = destructorName,
@@ -453,9 +464,22 @@ extendFunc f@(FunDecl fname _ _ _ (Just (_, clname)) _)
   | otherwise           = f
 extendFunc n = n
 
+-- const keyword to return value and this_ptr if needed.
+addConstness :: Object -> Object
+addConstness f@(FunDecl _ fr ps _ _ constfunc _)
+  = f{rettype = cident fr,
+      params = map cidentP ps}
+      where cident  v = if constfunc && '*' `elem` v then "const " ++ v else v
+            cidentP p = let n = if constfunc && varname p == this_ptrName
+                                  then "const " ++ vartype p
+                                  else vartype p
+                        in p{vartype = n}
+addConstness n = n
+
 -- separate pointer * from other chars in function return type.
+-- remove keywords such as virtual, static, etc.
 correctFuncRetType :: Object -> Object
-correctFuncRetType f@(FunDecl _ fr _ _ _ _)
+correctFuncRetType f@(FunDecl _ fr _ _ _ _ _)
   = f{rettype = correctType fr}
 correctFuncRetType n = n
 

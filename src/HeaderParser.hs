@@ -298,6 +298,7 @@ funDecl fn ft = do
     pars <- (try (spaces >> string "void" >> spaces >> return [])) <|> sepBy (paramDecl Nothing) (char ',' >> spaces)
     _ <- char ')' <?> "end of function parameter list: )"
     spaces
+    constfun <- option False (try (string "const" >> spaces) >> return True)
     optional (many (identifier >> spaces))
     -- constructing member variables
     optional (char ':' >> many (many1 (digit <|> oneOf ("(.-+)" ++ typedefchars)) >> spaces))
@@ -308,7 +309,7 @@ funDecl fn ft = do
     spaces
     ns <- namespacestack <$> getState
     vs <- getVisibility <$> getState
-    return $ FunDecl (fn ++ n) ft pars ns vs abstr
+    return $ FunDecl (fn ++ n) ft pars ns vs constfun abstr
 
 ignoreBraces :: CharParser u ()
 ignoreBraces = ignoreBraces' (0 :: Int)
