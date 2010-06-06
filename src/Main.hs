@@ -58,17 +58,18 @@ publicMemberFunction _                                      = False
 
 data Options = Options
   {
-    outputdir       :: FilePath
-  , inputfiles      :: [FilePath]
-  , includefiles    :: [FilePath]
-  , excludepatterns :: [String] 
-  , excludebases    :: [String]
-  , dumpmode        :: Bool
+    outputdir         :: FilePath
+  , inputfiles        :: [FilePath]
+  , includefiles      :: [FilePath]
+  , excludepatterns   :: [String] 
+  , excludebases      :: [String]
+  , checksuperclasses :: Bool
+  , dumpmode          :: Bool
   }
 $(deriveMods ''Options)
 
 defaultOptions :: Options
-defaultOptions = Options "" [] [] [] [] False
+defaultOptions = Options "" [] [] [] [] False False
 
 options :: [OptDescr (Options -> Options)]
 options = [
@@ -76,6 +77,7 @@ options = [
   , Option []    ["header"]       (ReqArg (\l -> modIncludefiles    (l:)) "File") "file to include in the generated headers"
   , Option []    ["exclude"]      (ReqArg (\l -> modExcludepatterns (l:)) "File") "exclude pattern for function names"
   , Option []    ["exclude-base"] (ReqArg (\l -> modExcludebases    (l:)) "File") "exclude pattern for required base classes"
+  , Option []    ["check-super"]  (NoArg  (setChecksuperclasses True))            "report error if super classes aren't found"
   , Option []    ["dump"]         (NoArg  (setDumpmode True))                     "simply dump the parsed data of the header"
   ]
 
@@ -98,12 +100,20 @@ main = do
     _              -> do
       if dumpmode opts
         then print press
-        else handleParses (outputdir opts) (includefiles opts) (excludepatterns opts) (excludebases opts) $ zip (map takeFileName rest) press
+        else handleParses (outputdir opts) 
+                          (includefiles opts) 
+                          (excludepatterns opts) 
+                          (if checksuperclasses opts 
+                             then Just (excludebases opts) 
+                             else Nothing) 
+                   $ zip (map takeFileName rest) press
 
-handleParses :: FilePath -> [FilePath] -> [String] -> [String] -> [(FilePath, [Object])] -> IO ()
+handleParses :: FilePath -> [FilePath] -> [String] -> Maybe [String] -> [(FilePath, [Object])] -> IO ()
 handleParses outdir incfiles excls exclbases objs = do
     createDirectoryIfMissing True outdir
-    checkSuperClasses exclbases (concatMap snd objs)
+    case exclbases of
+      Just ex -> checkSuperClasses ex (concatMap snd objs)
+      Nothing -> return ()
     mapM_ (uncurry $ handleHeader outdir incfiles excls) objs
     exitWith ExitSuccess
 
