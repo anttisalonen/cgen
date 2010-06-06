@@ -203,7 +203,7 @@ handleHeader outdir incfiles excls headername objs = do
             hPrintf h "{\n"
             let prs = intercalate ", " $ map correctRef (params origfun)
             switch (funname origfun)
-              [(getClname origfun,      hPrintf h "    return new %s(%s);\n" (funname origfun) prs),
+              [(getClname origfun,      hPrintf h "    return new %s(%s);\n" (stripPtr $ rettype fun) prs),
                ('~':getClname origfun,  hPrintf h "    delete this_ptr;\n")]
               (if rettype fun == "void" 
                  then hPrintf h "    this_ptr->%s(%s);\n" (funname origfun) prs
