@@ -31,8 +31,8 @@ getFuns (o:os) =
     (Namespace _ os2)       -> getFuns os2 ++ getFuns os
     (ClassDecl _ _ n _ os2) -> 
        case n of
-         []              -> getFuns os2 ++ getFuns os
-         ((Public, _):_) -> getFuns os2 ++ getFuns os
+         []              -> getFuns (map snd os2) ++ getFuns os
+         ((Public, _):_) -> getFuns (map snd os2) ++ getFuns os
          _               -> getFuns os
     _                       -> getFuns os
 
@@ -41,7 +41,7 @@ getClasses [] = []
 getClasses (o:os) = 
   case o of
     (Namespace _ os2)       -> getClasses os2 ++ getClasses os
-    (ClassDecl _ _ _ _ os2) -> o : getClasses os2 ++ getClasses os
+    (ClassDecl _ _ _ _ os2) -> o : getClasses (map snd os2) ++ getClasses os
     _                       -> getClasses os
 
 getObjName :: Object -> String
@@ -50,7 +50,7 @@ getObjName (Namespace n _ )      = n
 getObjName (TypeDef (n, _))      = n
 getObjName (ClassDecl n _ _ _ _) = n
 getObjName (VarDecl p _)         = varname p
-getObjName (EnumDef n _)         = n
+getObjName (EnumDef n _ _)       = n
 
 publicMemberFunction :: Object -> Bool
 publicMemberFunction (FunDecl _ _ _ _ (Just (Public, _)) _) = True
@@ -218,15 +218,18 @@ handleHeader outdir incfiles excls headername objs = do
         namespaces = filter (not . null) $ nub $ map (headDef "") (map fnnamespace funs)
         classnames = filter (not . null) $ nub $ map getObjName $ getClasses objs
         classes    = concatMap (\nm -> filter (classHasName nm) (getClasses objs)) classnames
-        alltypedefs = catMaybes $ map getTypedef (concatMap classobjects classes)
+        alltypedefs = catMaybes $ map getTypedef (map snd $ concatMap classobjects classes)
         usedtypedefs = usedTypedefs usedtypes alltypedefs
-        extratypedefs = extraTypedefs usedtypedefs alltypedefs -- TODO: simply use all public typedefs instead
+        extratypedefs = extraTypedefs usedtypedefs alltypedefs
+        -- NOTE: can't just use only public typedefs, because they sometimes depend on 
+        -- protected typedefs, so include them as well (so-called secondary typedefs).
         typedefs   = nub $ extratypedefs ++ usedtypedefs
+        allenums   = map snd $ filter (\(v, o) -> isEnum o && v == Public) $ concatMap classobjects classes
         funs       = mangle $ map expandFun allfuns
         excludeFun f = lastDef ' ' (correctType $ rettype f) == '&' || -- TODO: allow returned references
                        or (map (\e -> funname f =~ e) excls) ||
                        take 8 (funname f) == "operator"
-        expandFun f = correctFuncRetType . correctFuncParams . finalName . addClassspaces classes . addThisPointer . extendFunc $ f
+        expandFun f = addClassspaces allenums classes . correctFuncRetType . correctFuncParams . finalName . addThisPointer . extendFunc $ f
         usedtypes  = getAllTypes funs
 
 -- typesInType "int" = ["int"]
@@ -275,24 +278,30 @@ getUsedFunTypes (FunDecl _ rt ps _ _ _) =
 getUsedFunTypes _ = []
 
 -- for all types of a function, turn "y" into "x::y" when y is a nested class inside x.
-addClassspaces :: [Object] -> Object -> Object
-addClassspaces classes f@(FunDecl _ rt ps _ _ _) =
-  let rt' = addClassQual classes rt
-      ps' = map (addParamClassQual classes) ps
+addClassspaces :: [Object] -> [Object] -> Object -> Object
+addClassspaces enums classes f@(FunDecl _ rt ps _ _ _) =
+  let rt' = addClassQual enums classes rt
+      ps' = map (addParamClassQual enums classes) ps
   in f{rettype = rt',
        params  = ps'}
-addClassspaces _       n                         = n
+addClassspaces _     _       n                         = n
 
-addParamClassQual :: [Object] -> ParamDecl -> ParamDecl
-addParamClassQual classes p@(ParamDecl _ t _ _) =
-  let t' = addClassQual classes t
+addParamClassQual :: [Object] -> [Object] -> ParamDecl -> ParamDecl
+addParamClassQual enums classes p@(ParamDecl _ t _ _) =
+  let t' = addClassQual enums classes t
   in p{vartype = t'}
 
-addClassQual classes rt =
+-- add class qualification to rt, if a class named rt is found.
+-- the qualification added is the class nesting of the found class.
+addClassQual :: [Object] -> [Object] -> String -> String
+addClassQual enums classes rt =
   case fetchClass classes (stripPtr rt) of
-    Nothing -> rt
+    Nothing -> case fetchEnum enums (stripPtr rt) of
+                 Nothing -> rt
+                 Just e  -> addNamespaceQual (map snd $ enumclassnesting e) rt
     Just c  -> addNamespaceQual (map snd $ classnesting c) rt
 
+-- stripPtr " char * " = "char"
 stripPtr :: String -> String
 stripPtr = stripWhitespace . takeWhile (/= '*')
 
@@ -301,10 +310,21 @@ stripWhitespace = snd . foldr go (True, "") . dropWhile (== ' ')
   where go ' ' (True,  acc) = (True, acc)
         go x   (_,     acc) = (False, x:acc)
 
+-- return the enum called n, if found.
+fetchEnum :: [Object] -> String -> Maybe Object
+fetchEnum enums n = headMay $ filter (enumHasName n) enums
+
+-- return the class called n, if found.
+fetchClass :: [Object] -> String -> Maybe Object
 fetchClass classes n = headMay $ filter (classHasName n) classes
 
+-- addNamespaceQual ["aa", "bb"] "foo" = "bb::aa::foo"
 addNamespaceQual :: [String] -> String -> String
 addNamespaceQual ns n = concatMap (++ "::") ns ++ n
+
+enumHasName :: String -> Object -> Bool
+enumHasName n (EnumDef cn _ _) = n == cn
+enumHasName _ _                = False
 
 classHasName :: String -> Object -> Bool
 classHasName n (ClassDecl cn _ _ _ _) = n == cn
@@ -313,6 +333,14 @@ classHasName _ _                      = False
 getTypedef :: Object -> Maybe (String, String)
 getTypedef (TypeDef t) = Just t
 getTypedef _           = Nothing
+
+isEnum :: Object -> Bool
+isEnum (EnumDef _ _ _)  = True
+isEnum _                = False
+
+getEnum :: Object -> Maybe Object
+getEnum o@(EnumDef _ _ _)  = Just o
+getEnum _                  = Nothing
 
 -- turn a "char& param" into "*param".
 correctRef :: ParamDecl -> String

@@ -26,10 +26,14 @@ data Object = FunDecl {
               , classinherits  :: [InheritDecl]
               , classnesting   :: [(InheritLevel, String)]
               , classnamespace :: [String]
-              , classobjects   :: [Object]
+              , classobjects   :: [(InheritLevel, Object)]
               }
             | VarDecl ParamDecl (Maybe (InheritLevel, String))
-            | EnumDef String [EnumVal]
+            | EnumDef {
+                enumname         :: String
+              , enumvalues       :: [EnumVal]
+              , enumclassnesting :: [(InheritLevel, String)]
+              }
     deriving (Eq, Read, Show)
 
 data InheritDecl = InheritDecl {

@@ -60,6 +60,7 @@ macro w = do
   _ <- optional (eos)
   return $ VarDecl (ParamDecl w "macro" Nothing Nothing) Nothing
 
+enum :: CharParser HeaderState Object
 enum = do
     _ <- many1 whitespace
     n <- identifier
@@ -73,7 +74,8 @@ enum = do
     spaces
     _ <- eos
     spaces
-    return $ EnumDef n vals
+    cls <- classstack <$> getState
+    return $ EnumDef n vals cls
 
 enumVal = do
     spaces
@@ -150,13 +152,18 @@ clconts cs ns n inherits lev = do
     spaces
     return $ ClassDecl n inherits cs ns ret
 
-clcontents :: CharParser HeaderState [Object]
+clcontents :: CharParser HeaderState [(InheritLevel, Object)]
 clcontents = do
   spaces
   many $ do
     spaces
     optional (many1 (try setinheritlevel <|> try frienddecl))
-    try specialClassFunction <|> oneobj
+    obj <- try specialClassFunction <|> oneobj
+    vis <- getVisibility <$> getState
+    let vn = case vis of
+               Nothing     -> Public
+               Just (v, _) -> v
+    return (vn, obj)
 
 -- constructor or destructor.
 specialClassFunction = do
