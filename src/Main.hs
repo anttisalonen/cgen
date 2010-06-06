@@ -151,6 +151,7 @@ refToPointer t =
     else t
 
 -- separate pointer * from other chars.
+-- remove keywords such as virtual, static, etc.
 correctType :: String -> String
 correctType t =
   let ns = words t
@@ -225,7 +226,11 @@ handleHeader outdir incfiles excls headername objs = do
                 (funname fun)
                 (paramFormat (params fun))
             hPrintf h "{\n"
-            let prs = intercalate ", " $ map correctRef (checkParamNames $ params origfun)
+            -- NOTE: do NOT call refToPointerParam or correctFuncParams
+            -- for prs, because then the information that the parameter
+            -- is actually a reference and the pointer must be dereferenced
+            -- is lost.
+            let prs = intercalate ", " $ map correctRef $ checkParamNames $ map correctParam $ params origfun
             switch (funname origfun)
               [(getClname origfun,      hPrintf h "    return new %s(%s);\n" (stripPtr $ rettype fun) prs),
                ('~':getClname origfun,  hPrintf h "    delete this_ptr;\n")]
