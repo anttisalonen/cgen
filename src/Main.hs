@@ -214,8 +214,12 @@ handleHeader outdir incfiles excls headername objs = do
 
   where outfile    = (outdir </> headername)
         cppoutfile = (outdir </> takeBaseName headername <.> "cpp")
-        allfuns    = filter (\f -> publicMemberFunction f && not (abstract f) && not (excludeFun f)) (getFuns objs)
+        allfuns    = filter (\f -> publicMemberFunction f && 
+                                   not (abstract f) && 
+                                   not (excludeFun f) && 
+                                   not (abstractConstructor classes f)) (getFuns objs)
         namespaces = filter (not . null) $ nub $ map (headDef "") (map fnnamespace funs)
+        -- list of names of all parsed classes
         classnames = filter (not . null) $ nub $ map getObjName $ getClasses objs
         classes    = concatMap (\nm -> filter (classHasName nm) (getClasses objs)) classnames
         alltypedefs = catMaybes $ map getTypedef (map snd $ concatMap classobjects classes)
@@ -231,6 +235,17 @@ handleHeader outdir incfiles excls headername objs = do
                        take 8 (funname f) == "operator"
         expandFun f = addClassspaces allenums classes . correctFuncRetType . correctFuncParams . finalName . addThisPointer . extendFunc $ f
         usedtypes  = getAllTypes funs
+
+abstractConstructor :: [Object] -> Object -> Bool
+abstractConstructor classes (FunDecl fn _ _ _ (Just (_, _)) _) =
+  case fetchClass classes fn of
+    Nothing -> False
+    Just cl -> any isAbstractFun (map snd $ classobjects cl)
+abstractConstructor _       _                                  = False
+
+isAbstractFun :: Object -> Bool
+isAbstractFun (FunDecl _ _ _ _ _ a) = a
+isAbstractFun _                     = False
 
 -- typesInType "int" = ["int"]
 -- typesInType "map<String, Animation*>::type" = ["String", "Animation"]
