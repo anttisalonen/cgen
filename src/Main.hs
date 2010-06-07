@@ -13,6 +13,7 @@ import Data.List
 import Data.Maybe
 import Data.Char
 import Control.Monad
+import Control.Monad.State
 import Text.Printf
 import qualified Data.Set as S
 
@@ -66,12 +67,14 @@ data Options = Options
   , checksuperclasses :: Bool
   , renamedtypes      :: [(String, String)]
   , excludeclasses    :: [String]
+  , interfacefile     :: String
   , dumpmode          :: Bool
   }
+  deriving (Show)
 $(deriveMods ''Options)
 
 defaultOptions :: Options
-defaultOptions = Options "" [] [] [] [] False [] [] False
+defaultOptions = Options "" [] [] [] [] False [] [] "" False
 
 options :: [OptDescr (Options -> Options)]
 options = [
@@ -82,6 +85,7 @@ options = [
   , Option []    ["exclude-class"] (ReqArg (\l -> modExcludeclasses  (l:)) "Class")     "exclude pattern for classes"
   , Option []    ["check-super"]   (NoArg  (setChecksuperclasses True))                 "report error if super classes aren't found"
   , Option []    ["rename"]        (ReqArg (addRenamedTypes) "oldtype|newtype")         "rename a type by another one"
+  , Option []    ["interface"]     (ReqArg (setInterfacefile) "file")                   "define input interface file"
   , Option []    ["dump"]          (NoArg  (setDumpmode True))                          "simply dump the parsed data of the header"
   ]
 
@@ -100,7 +104,8 @@ main = do
     pr <- getProgName
     putStrLn $ usageInfo ("Usage: " ++ pr ++ " <options> <C++ header files>") options
     exitWith (ExitFailure 1)
-  let opts = foldl' (flip ($)) defaultOptions actions
+  let prevopts = foldl' (flip ($)) defaultOptions actions
+  opts <- handleInterfaceFile prevopts
   contents <- mapM readFile rest
   let parses = map parseHeader contents
       (perrs, press) = partitionEithers parses
@@ -112,7 +117,9 @@ main = do
     _              -> do
       if dumpmode opts
         then print press
-        else handleParses (outputdir opts) 
+        else do
+          print opts 
+          handleParses (outputdir opts) 
                           (includefiles opts) 
                           (excludepatterns opts) 
                           (excludeclasses opts) 
@@ -121,6 +128,35 @@ main = do
                              else Nothing) 
                           (renamedtypes opts) 
                    $ zip (map takeFileName rest) press
+
+handleInterfaceFile :: Options -> IO Options
+handleInterfaceFile oldopts | null (interfacefile oldopts) = return oldopts
+                            | otherwise = do
+    contents <- readFile (interfacefile oldopts)
+    let ls = lines contents
+    return $ flip evalState None (parseInterfaceFile ls oldopts)
+
+parseInterfaceFile :: [String] -> Options -> State InterfaceState Options
+parseInterfaceFile []     opts = return opts
+parseInterfaceFile (l:ls) opts = do
+    case l of
+      "@exclude"       -> put Exclude      >> parseInterfaceFile ls opts
+      "@header"        -> put Header       >> parseInterfaceFile ls opts
+      "@rename"        -> put Rename       >> parseInterfaceFile ls opts
+      "@exclude-class" -> put ExcludeClass >> parseInterfaceFile ls opts
+      ""               ->                     parseInterfaceFile ls opts
+      ('~':_)          -> put None         >> parseInterfaceFile ls opts
+      n -> do
+        v <- get
+        let ofun = case v of
+                   Exclude      -> modExcludepatterns (n:)
+                   Header       -> modIncludefiles (n:)
+                   Rename       -> addRenamedTypes n
+                   ExcludeClass -> modExcludeclasses (n:)
+                   None         -> id
+        parseInterfaceFile ls (ofun opts)
+
+data InterfaceState = None | Exclude | ExcludeClass | Header | Rename
 
 handleParses :: FilePath -> [FilePath] -> [String] -> [String] -> Maybe [String] -> [(String, String)] -> [(FilePath, [Object])] -> IO ()
 handleParses outdir incfiles exclclasses excls exclbases rens objs = do
