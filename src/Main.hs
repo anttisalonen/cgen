@@ -117,9 +117,7 @@ main = do
     _              -> do
       if dumpmode opts
         then print press
-        else do
-          print opts 
-          handleParses (outputdir opts) 
+        else handleParses (outputdir opts) 
                           (includefiles opts) 
                           (excludepatterns opts) 
                           (excludeclasses opts) 
