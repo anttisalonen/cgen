@@ -302,11 +302,29 @@ renameParam rens p@(ParamDecl _ pt _ _) =
 
 renameType :: [(String, String)] -> String -> String
 renameType rens t =
-  let nt = lookupJustDef tm tm rens
+  let mnt = lookup tm rens
       tm = (stripConst . stripPtr) t
       mf1 = if isConst t then makeConst else id
       mf2 = makePtr (isPtr t)
+      nt = case mnt of
+             Nothing -> if '<' `elem` t && '>' `elem` t
+                          then handleTemplateTypes rens t
+                          else tm
+             Just t' -> t'
   in (mf1 . mf2) nt
+
+handleTemplateTypes :: [(String, String)] -> String -> String
+handleTemplateTypes rens t = 
+  let alltypes = typesInType t
+      newtypes = map (renameType rens) alltypes
+  in foldr (uncurry replace) ((stripConst . stripPtr) t) (zip alltypes newtypes)
+
+replace :: String -> String -> String -> String
+replace old new str = 
+  let (s1, s2, s3) = str =~ old
+  in if s2 == old
+       then s1 ++ new ++ s3
+       else str
 
 isConst :: String -> Bool
 isConst n = take 6 n == "const "
