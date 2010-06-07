@@ -64,12 +64,13 @@ data Options = Options
   , excludepatterns   :: [String] 
   , excludebases      :: [String]
   , checksuperclasses :: Bool
+  , renamedtypes      :: [(String, String)]
   , dumpmode          :: Bool
   }
 $(deriveMods ''Options)
 
 defaultOptions :: Options
-defaultOptions = Options "" [] [] [] [] False False
+defaultOptions = Options "" [] [] [] [] False [] False
 
 options :: [OptDescr (Options -> Options)]
 options = [
@@ -78,15 +79,24 @@ options = [
   , Option []    ["exclude"]      (ReqArg (\l -> modExcludepatterns (l:)) "File") "exclude pattern for function names"
   , Option []    ["exclude-base"] (ReqArg (\l -> modExcludebases    (l:)) "File") "exclude pattern for required base classes"
   , Option []    ["check-super"]  (NoArg  (setChecksuperclasses True))            "report error if super classes aren't found"
+  , Option []    ["rename"]       (ReqArg (addRenamedTypes) "oldtype|newtype")    "rename a type by another one"
   , Option []    ["dump"]         (NoArg  (setDumpmode True))                     "simply dump the parsed data of the header"
   ]
+
+addRenamedTypes :: String -> Options -> Options
+addRenamedTypes l = 
+  case splitBy '|' l of
+    [t1,t2] -> modRenamedtypes ((t1,t2):)
+    _       -> id
 
 main :: IO ()
 main = do 
   args <- getArgs
   let (actions, rest, errs) = getOpt Permute options args
-  when (not (null errs)) $ do
-    mapM_ print errs
+  when (not (null errs) || null rest) $ do
+    mapM_ putStrLn errs
+    pr <- getProgName
+    putStrLn $ usageInfo ("Usage: " ++ pr ++ " <options> <C++ header files>") options
     exitWith (ExitFailure 1)
   let opts = foldl' (flip ($)) defaultOptions actions
   contents <- mapM readFile rest
@@ -106,15 +116,16 @@ main = do
                           (if checksuperclasses opts 
                              then Just (excludebases opts) 
                              else Nothing) 
+                          (renamedtypes opts) 
                    $ zip (map takeFileName rest) press
 
-handleParses :: FilePath -> [FilePath] -> [String] -> Maybe [String] -> [(FilePath, [Object])] -> IO ()
-handleParses outdir incfiles excls exclbases objs = do
+handleParses :: FilePath -> [FilePath] -> [String] -> Maybe [String] -> [(String, String)] -> [(FilePath, [Object])] -> IO ()
+handleParses outdir incfiles excls exclbases rens objs = do
     createDirectoryIfMissing True outdir
     case exclbases of
       Just ex -> checkSuperClasses ex (concatMap snd objs)
       Nothing -> return ()
-    mapM_ (uncurry $ handleHeader outdir incfiles excls) objs
+    mapM_ (uncurry $ handleHeader outdir incfiles excls rens) objs
     exitWith ExitSuccess
 
 checkSuperClasses :: [String] -> [Object] -> IO ()
@@ -180,8 +191,8 @@ isType "union"   = False
 isType "inline"  = False
 isType _         = True
 
-handleHeader :: FilePath -> [FilePath] -> [String] -> FilePath -> [Object] -> IO ()
-handleHeader outdir incfiles excls headername objs = do
+handleHeader :: FilePath -> [FilePath] -> [String] -> [(String, String)] -> FilePath -> [Object] -> IO ()
+handleHeader outdir incfiles excls rens headername objs = do
     withFile outfile WriteMode $ \h -> do
         hPrintf h "#ifndef CGEN_%s_H\n" (toCapital (takeBaseName headername))
         hPrintf h "#define CGEN_%s_H\n" (toCapital (takeBaseName headername))
@@ -265,6 +276,7 @@ handleHeader outdir incfiles excls headername objs = do
                        or (map (\e -> funname f =~ e) excls) ||
                        take 8 (funname f) == "operator"
         expandFun f = addConstness . -- add const keyword if the function is const
+                      renameTypes rens . -- rename types as specified by user
                       addClassspaces allenums classes . -- add qualification when necessary
                       correctFuncRetType . -- remove keywords from return type
                       correctFuncParams . -- ref to pointer, create param name if none, remove keywords
@@ -272,6 +284,18 @@ handleHeader outdir incfiles excls headername objs = do
                       addThisPointer .  -- 1st parameter
                       extendFunc $ f -- constructor & destructor handling
         usedtypes  = getAllTypes funs
+
+renameTypes :: [(String, String)] -> Object -> Object
+renameTypes rens f@(FunDecl _ rt ps _ _ _ _) =
+    f{rettype = rt',
+      params = ps'}
+  where rt' = lookupJustDef rt rt rens
+        ps' = map (renameParam rens) ps
+renameTypes _ n = n
+
+renameParam :: [(String, String)] -> ParamDecl -> ParamDecl
+renameParam rens p@(ParamDecl _ pt _ _) =
+    p{vartype = lookupJustDef pt pt rens}
 
 abstractConstructor :: [Object] -> Object -> Bool
 abstractConstructor classes (FunDecl fn _ _ _ (Just (_, _)) _ _) =
