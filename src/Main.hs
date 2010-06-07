@@ -287,12 +287,21 @@ handleHeader outdir incfiles excls rens headername objs = do
 
 renameTypes :: [(String, String)] -> Object -> Object
 renameTypes rens f@(FunDecl _ rt ps _ _ _ _) =
-    f{rettype = rt',
-      params = ps'}
-  where rt' = lookupJustDef rt rtm rens
-        rtm = stripConst rt
-        ps' = map (renameParam rens) ps
+    f{rettype = renameType rens rt,
+      params = map (renameParam rens) ps}
 renameTypes _ n = n
+
+renameParam :: [(String, String)] -> ParamDecl -> ParamDecl
+renameParam rens p@(ParamDecl _ pt _ _) =
+    p{vartype = renameType rens pt}
+
+renameType :: [(String, String)] -> String -> String
+renameType rens t =
+  let nt = lookupJustDef tm tm rens
+      tm = (stripConst . stripPtr) t
+      mf1 = if isConst t then makeConst else id
+      mf2 = makePtr (isPtr t)
+  in (mf1 . mf2) nt
 
 isConst :: String -> Bool
 isConst n = take 6 n == "const "
@@ -301,10 +310,14 @@ stripConst :: String -> String
 stripConst n | isConst n = stripWhitespace $ drop 5 n 
              | otherwise = n
 
-renameParam :: [(String, String)] -> ParamDecl -> ParamDecl
-renameParam rens p@(ParamDecl _ pt _ _) =
-    p{vartype = lookupJustDef pt ptm rens}
-  where ptm = stripConst pt
+makeConst :: String -> String
+makeConst n = "const " ++ n
+
+makePtr :: Int -> String -> String
+makePtr num t = t ++ replicate num '*'
+
+isPtr :: String -> Int
+isPtr = length . filter (=='*') . dropWhile (/= '*')
 
 abstractConstructor :: [Object] -> Object -> Bool
 abstractConstructor classes (FunDecl fn _ _ _ (Just (_, _)) _ _) =
