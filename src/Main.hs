@@ -157,7 +157,7 @@ parseInterfaceFile (l:ls) opts = do
 data InterfaceState = None | Exclude | ExcludeClass | Header | Rename
 
 handleParses :: FilePath -> [FilePath] -> [String] -> [String] -> Maybe [String] -> [(String, String)] -> [(FilePath, [Object])] -> IO ()
-handleParses outdir incfiles exclclasses excls exclbases rens objs = do
+handleParses outdir incfiles excls exclclasses exclbases rens objs = do
     createDirectoryIfMissing True outdir
     case exclbases of
       Just ex -> checkSuperClasses ex (concatMap snd objs)
