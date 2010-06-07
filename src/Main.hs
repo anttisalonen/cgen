@@ -65,22 +65,24 @@ data Options = Options
   , excludebases      :: [String]
   , checksuperclasses :: Bool
   , renamedtypes      :: [(String, String)]
+  , excludeclasses    :: [String]
   , dumpmode          :: Bool
   }
 $(deriveMods ''Options)
 
 defaultOptions :: Options
-defaultOptions = Options "" [] [] [] [] False [] False
+defaultOptions = Options "" [] [] [] [] False [] [] False
 
 options :: [OptDescr (Options -> Options)]
 options = [
-    Option ['o'] ["output"]       (ReqArg (setOutputdir) "Directory")             "output directory for the C files"
-  , Option []    ["header"]       (ReqArg (\l -> modIncludefiles    (l:)) "File") "file to include in the generated headers"
-  , Option []    ["exclude"]      (ReqArg (\l -> modExcludepatterns (l:)) "File") "exclude pattern for function names"
-  , Option []    ["exclude-base"] (ReqArg (\l -> modExcludebases    (l:)) "File") "exclude pattern for required base classes"
-  , Option []    ["check-super"]  (NoArg  (setChecksuperclasses True))            "report error if super classes aren't found"
-  , Option []    ["rename"]       (ReqArg (addRenamedTypes) "oldtype|newtype")    "rename a type by another one"
-  , Option []    ["dump"]         (NoArg  (setDumpmode True))                     "simply dump the parsed data of the header"
+    Option ['o'] ["output"]        (ReqArg (setOutputdir) "Directory")                  "output directory for the C files"
+  , Option []    ["header"]        (ReqArg (\l -> modIncludefiles    (l:)) "File")      "file to include in the generated headers"
+  , Option []    ["exclude"]       (ReqArg (\l -> modExcludepatterns (l:)) "Function")  "exclude pattern for function names"
+  , Option []    ["exclude-base"]  (ReqArg (\l -> modExcludebases    (l:)) "Class")     "exclude pattern for required base classes (with check-super)"
+  , Option []    ["exclude-class"] (ReqArg (\l -> modExcludeclasses  (l:)) "Class")     "exclude pattern for classes"
+  , Option []    ["check-super"]   (NoArg  (setChecksuperclasses True))                 "report error if super classes aren't found"
+  , Option []    ["rename"]        (ReqArg (addRenamedTypes) "oldtype|newtype")         "rename a type by another one"
+  , Option []    ["dump"]          (NoArg  (setDumpmode True))                          "simply dump the parsed data of the header"
   ]
 
 addRenamedTypes :: String -> Options -> Options
@@ -113,19 +115,20 @@ main = do
         else handleParses (outputdir opts) 
                           (includefiles opts) 
                           (excludepatterns opts) 
+                          (excludeclasses opts) 
                           (if checksuperclasses opts 
                              then Just (excludebases opts) 
                              else Nothing) 
                           (renamedtypes opts) 
                    $ zip (map takeFileName rest) press
 
-handleParses :: FilePath -> [FilePath] -> [String] -> Maybe [String] -> [(String, String)] -> [(FilePath, [Object])] -> IO ()
-handleParses outdir incfiles excls exclbases rens objs = do
+handleParses :: FilePath -> [FilePath] -> [String] -> [String] -> Maybe [String] -> [(String, String)] -> [(FilePath, [Object])] -> IO ()
+handleParses outdir incfiles exclclasses excls exclbases rens objs = do
     createDirectoryIfMissing True outdir
     case exclbases of
       Just ex -> checkSuperClasses ex (concatMap snd objs)
       Nothing -> return ()
-    mapM_ (uncurry $ handleHeader outdir incfiles excls rens) objs
+    mapM_ (uncurry $ handleHeader outdir incfiles exclclasses excls rens) objs
     exitWith ExitSuccess
 
 checkSuperClasses :: [String] -> [Object] -> IO ()
@@ -192,8 +195,8 @@ isType "union"   = False
 isType "inline"  = False
 isType _         = True
 
-handleHeader :: FilePath -> [FilePath] -> [String] -> [(String, String)] -> FilePath -> [Object] -> IO ()
-handleHeader outdir incfiles excls rens headername objs = do
+handleHeader :: FilePath -> [FilePath] -> [String] -> [String] -> [(String, String)] -> FilePath -> [Object] -> IO ()
+handleHeader outdir incfiles exclclasses excls rens headername objs = do
     withFile outfile WriteMode $ \h -> do
         hPrintf h "#ifndef CGEN_%s_H\n" (toCapital (takeBaseName headername))
         hPrintf h "#define CGEN_%s_H\n" (toCapital (takeBaseName headername))
@@ -275,7 +278,8 @@ handleHeader outdir incfiles excls rens headername objs = do
         funs       = mangle $ map expandFun allfuns
         excludeFun f = lastDef ' ' (correctType $ rettype f) == '&' || -- TODO: allow returned references
                        or (map (\e -> funname f =~ e) excls) ||
-                       take 8 (funname f) == "operator"
+                       or (map (\e -> fromMaybe "" (liftM snd (fnvisibility f)) =~ e) exclclasses) ||
+                       take 8 (funname f) == "operator"  -- TODO: allow normal functions with name starting with operator
         expandFun f = addConstness . -- add const keyword if the function is const
                       renameTypes rens . -- rename types as specified by user
                       addClassspaces allenums classes . -- add qualification when necessary
