@@ -184,7 +184,7 @@ sepChar _  l           = l
 isType :: String -> Bool
 isType "virtual" = False
 isType "static"  = False
-isType "const"   = False
+-- isType "const"   = False
 isType "mutable" = False
 isType "struct"  = False
 isType "union"   = False
@@ -245,7 +245,7 @@ handleHeader outdir incfiles excls rens headername objs = do
             -- is lost.
             let prs = intercalate ", " $ map correctRef $ checkParamNames $ map correctParam $ params origfun
             switch (funname origfun)
-              [(getClname origfun,      hPrintf h "    return new %s(%s);\n" (stripPtr $ rettype fun) prs),
+              [(getClname origfun,      hPrintf h "    return new %s(%s);\n" (stripConst . stripPtr $ rettype fun) prs),
                ('~':getClname origfun,  hPrintf h "    delete this_ptr;\n")]
               (if rettype fun == "void" 
                  then hPrintf h "    this_ptr->%s(%s);\n" (funname origfun) prs
@@ -289,13 +289,22 @@ renameTypes :: [(String, String)] -> Object -> Object
 renameTypes rens f@(FunDecl _ rt ps _ _ _ _) =
     f{rettype = rt',
       params = ps'}
-  where rt' = lookupJustDef rt rt rens
+  where rt' = lookupJustDef rt rtm rens
+        rtm = stripConst rt
         ps' = map (renameParam rens) ps
 renameTypes _ n = n
 
+isConst :: String -> Bool
+isConst n = take 6 n == "const "
+
+stripConst :: String -> String
+stripConst n | isConst n = stripWhitespace $ drop 5 n 
+             | otherwise = n
+
 renameParam :: [(String, String)] -> ParamDecl -> ParamDecl
 renameParam rens p@(ParamDecl _ pt _ _) =
-    p{vartype = lookupJustDef pt pt rens}
+    p{vartype = lookupJustDef pt ptm rens}
+  where ptm = stripConst pt
 
 abstractConstructor :: [Object] -> Object -> Bool
 abstractConstructor classes (FunDecl fn _ _ _ (Just (_, _)) _ _) =
@@ -308,13 +317,13 @@ isAbstractFun :: Object -> Bool
 isAbstractFun (FunDecl _ _ _ _ _ _ a) = a
 isAbstractFun _                       = False
 
--- typesInType "int" = ["int"]
+-- typesInType "const int" = ["int"]
 -- typesInType "map<String, Animation*>::type" = ["String", "Animation"]
 typesInType :: String -> [String]
 typesInType v =
     case betweenAngBrackets v of
-      "" -> [stripPtr v]
-      n  -> map stripPtr $ splitBy ',' n
+      "" -> [(stripConst . stripPtr) v]
+      n  -> map (stripConst . stripPtr) $ splitBy ',' n
 
 splitBy :: Char -> String -> [String]
 splitBy c str = 
@@ -346,7 +355,7 @@ usedTypedefs :: S.Set String -> [(String, String)] -> [(String, String)]
 usedTypedefs s = filter (\(_, t2) -> t2 `S.member` s)
 
 getAllTypes :: [Object] -> S.Set String
-getAllTypes = S.fromList . map stripPtr . concatMap getUsedFunTypes
+getAllTypes = S.fromList . map (stripConst . stripPtr) . concatMap getUsedFunTypes
 
 getUsedFunTypes :: Object -> [String]
 getUsedFunTypes (FunDecl _ rt ps _ _ _ _) =
@@ -371,8 +380,8 @@ addParamClassQual enums classes p@(ParamDecl _ t _ _) =
 -- the qualification added is the class nesting of the found class.
 addClassQual :: [Object] -> [Object] -> String -> String
 addClassQual enums classes rt =
-  case fetchClass classes (stripPtr rt) of
-    Nothing -> case fetchEnum enums (stripPtr rt) of
+  case fetchClass classes ((stripConst . stripPtr) rt) of
+    Nothing -> case fetchEnum enums ((stripConst . stripPtr) rt) of
                  Nothing -> rt
                  Just e  -> addNamespaceQual (map snd $ enumclassnesting e) rt
     Just c  -> addNamespaceQual (map snd $ classnesting c) rt
@@ -450,7 +459,7 @@ checkParamNames = go (1 :: Int)
   where go _ []     = []
         go n (p:ps) =
           let (p', n') = case varname p of
-                           "" -> (p{varname = (stripPtr $ vartype p) ++ (show n)}, n + 1)
+                           "" -> (p{varname = (stripConst . stripPtr $ vartype p) ++ (show n)}, n + 1)
                            _  -> (p, n)
           in p':(go n' ps)
 
@@ -493,8 +502,14 @@ addConstness :: Object -> Object
 addConstness f@(FunDecl _ fr ps _ _ constfunc _)
   = f{rettype = cident fr,
       params = map cidentP ps}
-      where cident  v = if constfunc && '*' `elem` v then "const " ++ v else v
-            cidentP p = let n = if constfunc && varname p == this_ptrName
+      where cident  v = if not (isConst v) && 
+                           constfunc && 
+                           '*' `elem` v 
+                          then "const " ++ v 
+                          else v
+            cidentP p = let n = if not (isConst (varname p)) &&
+                                   constfunc && 
+                                   varname p == this_ptrName
                                   then "const " ++ vartype p
                                   else vartype p
                         in p{vartype = n}
