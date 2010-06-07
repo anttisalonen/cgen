@@ -184,6 +184,7 @@ sepChar _  l           = l
 isType :: String -> Bool
 isType "virtual" = False
 isType "static"  = False
+isType "enum"    = False
 -- isType "const"   = False
 isType "mutable" = False
 isType "struct"  = False
