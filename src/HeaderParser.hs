@@ -301,7 +301,7 @@ funDecl fn ft = do
     constfun <- option False (try (string "const" >> spaces) >> return True)
     optional (many (identifier >> spaces))
     -- constructing member variables
-    optional (char ':' >> many (many1 (digit <|> oneOf ("(.-+)" ++ typedefchars)) >> spaces))
+    optional (char ':' >> many (many1 (digit <|> oneOf ("(.-+)[]" ++ typedefchars)) >> spaces))
     abstr <- (char '{' >> ignoreBraces >> skipMany eos >> return False) <|> 
              (eos >> return False) <|> 
              (char '=' >> spaces >> char '0' >> 
