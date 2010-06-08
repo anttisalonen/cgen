@@ -20,6 +20,7 @@ import Text.Regex.Posix
 import HeaderParser
 import HeaderData
 import CppGen
+import HaskellGen
 import Utils
 import DeriveMod
 
@@ -34,13 +35,14 @@ data Options = Options
   , renamedtypes      :: [(String, String)]
   , excludeclasses    :: [String]
   , interfacefile     :: String
+  , hsoutpath         :: Maybe FilePath
   , dumpmode          :: Bool
   }
   deriving (Show)
 $(deriveMods ''Options)
 
 defaultOptions :: Options
-defaultOptions = Options "" [] [] [] [] False [] [] "" False
+defaultOptions = Options "" [] [] [] [] False [] [] "" Nothing False
 
 options :: [OptDescr (Options -> Options)]
 options = [
@@ -52,6 +54,7 @@ options = [
   , Option []    ["check-super"]   (NoArg  (setChecksuperclasses True))                 "report error if super classes aren't found"
   , Option []    ["rename"]        (ReqArg (addRenamedTypes) "oldtype|newtype")         "rename a type by another one"
   , Option []    ["interface"]     (ReqArg (setInterfacefile) "file")                   "define input interface file"
+  , Option []    ["hs-output"]     (ReqArg (setHsoutpath . Just) "Directory")           "enable generation and set the output directory for Haskell files"
   , Option []    ["dump"]          (NoArg  (setDumpmode True))                          "simply dump the parsed data of the header"
   ]
 
@@ -80,18 +83,38 @@ main = do
         putStrLn str
         putStrLn $ "Could not parse: " ++ show err
         exitWith (ExitFailure 1)
-    _              -> do
+    []             -> do
       if dumpmode opts
         then print press
-        else handleParses (outputdir opts) 
-                          (includefiles opts) 
-                          (excludepatterns opts) 
-                          (excludeclasses opts) 
-                          (if checksuperclasses opts 
-                             then Just (excludebases opts) 
-                             else Nothing) 
-                          (renamedtypes opts) 
-                   $ zip (map takeFileName rest) press
+        else do 
+          handleParses (outputdir opts) 
+                       (includefiles opts) 
+                       (excludepatterns opts) 
+                       (excludeclasses opts) 
+                       (if checksuperclasses opts 
+                          then Just (excludebases opts) 
+                          else Nothing) 
+                       (renamedtypes opts) 
+                $ zip (map takeFileName rest) press
+          case hsoutpath opts of
+            Nothing    -> exitWith ExitSuccess
+            Just hsout -> handleHaskell hsout (map takeFileName rest) (outputdir opts)
+
+handleHaskell :: FilePath -> [FilePath] -> FilePath -> IO ()
+handleHaskell hsout initfilenames indir = do
+    let filenames = map (</> indir) initfilenames
+    gencontents <- mapM readFile filenames
+    let genparses = map parseHeader gencontents
+        (genperrs, genpress) = partitionEithers genparses
+    case genperrs of
+      ((str, err):_) -> do
+          putStrLn str
+          putStrLn $ "Could not parse generated file (!): " ++ show err
+          exitWith (ExitFailure 3)
+      []             -> do
+          createDirectoryIfMissing True hsout
+          haskellGen hsout $ zip (map takeFileName filenames) genpress
+          exitWith ExitSuccess
 
 handleInterfaceFile :: Options -> IO Options
 handleInterfaceFile oldopts | null (interfacefile oldopts) = return oldopts
@@ -129,7 +152,6 @@ handleParses outdir incfiles excls exclclasses exclbases rens objs = do
       Just ex -> checkSuperClasses ex (concatMap snd objs)
       Nothing -> return ()
     mapM_ (uncurry $ handleHeader outdir incfiles exclclasses excls rens) objs
-    exitWith ExitSuccess
 
 checkSuperClasses :: [String] -> [Object] -> IO ()
 checkSuperClasses excls objs = do
@@ -142,5 +164,4 @@ checkSuperClasses excls objs = do
         forM_ (S.toList missingrest) $ \s -> do
             hPrintf stderr "    %-40s\n" s
         exitWith (ExitFailure 3)
-
 
