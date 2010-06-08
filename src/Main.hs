@@ -102,7 +102,7 @@ main = do
 
 handleHaskell :: FilePath -> [FilePath] -> FilePath -> IO ()
 handleHaskell hsout initfilenames indir = do
-    let filenames = map (</> indir) initfilenames
+    let filenames = map (indir </>) initfilenames
     gencontents <- mapM readFile filenames
     let genparses = map parseHeader gencontents
         (genperrs, genpress) = partitionEithers genparses

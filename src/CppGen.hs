@@ -41,35 +41,6 @@ refToPointer t =
     then init t ++ "*"
     else t
 
--- separate pointer * from other chars.
--- remove keywords such as virtual, static, etc.
-correctType :: String -> String
-correctType t =
-  let ns = words t
-  in case ns of
-       []  -> ""
-       ms  -> intercalate " " $ sepChars "*" $ filter isType ms
-
-sepChars :: String -> [String] -> [String]
-sepChars st = map (sepChar st)
-
-sepChar :: String -> String -> String
-sepChar st (x:y:xs)    = if x /= ' ' && x `notElem` st && y `elem` st
-                           then x {-: ' '-} : sepChar st (y:xs)
-                           else x : sepChar st (y:xs)
-sepChar _  l           = l
-
-isType :: String -> Bool
-isType "virtual" = False
-isType "static"  = False
-isType "enum"    = False
--- isType "const"   = False
-isType "mutable" = False
-isType "struct"  = False
-isType "union"   = False
-isType "inline"  = False
-isType _         = True
-
 handleHeader :: FilePath -> [FilePath] -> [String] -> [String] -> [(String, String)] -> FilePath -> [Object] -> IO ()
 handleHeader outdir incfiles exclclasses excls rens headername objs = do
     withFile outfile WriteMode $ \h -> do
@@ -200,9 +171,6 @@ makeConst n = "const " ++ n
 makePtr :: Int -> String -> String
 makePtr num t = t ++ replicate num '*'
 
-isPtr :: String -> Int
-isPtr = length . filter (=='*') . dropWhile (/= '*')
-
 abstractConstructor :: [Object] -> Object -> Bool
 abstractConstructor classes (FunDecl fn _ _ _ (Just (_, _)) _ _) =
   case fetchClass classes fn of
@@ -332,15 +300,6 @@ addConstness f@(FunDecl _ fr ps _ _ constfunc _)
                                   else vartype p
                         in p{vartype = n}
 addConstness n = n
-
--- "aaa < bbb, ddd> fff" = " bbb, ddd"
-betweenAngBrackets :: String -> String
-betweenAngBrackets = fst . foldr go ("", Nothing)
-  where go _   (accs, Just True)  = (accs, Just True)    -- done
-        go '>' (accs, Nothing)    = (accs, Just False)   -- start
-        go '<' (accs, Just False) = (accs, Just True)    -- finish
-        go c   (accs, Just False) = (c:accs, Just False) -- collect
-        go _   (accs, Nothing)    = (accs, Nothing)      -- continue
 
 -- filtering typedefs doesn't help - t1 may refer to private definitions.
 usedTypedefs :: S.Set String -> [(String, String)] -> [(String, String)]
