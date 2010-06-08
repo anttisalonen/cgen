@@ -303,7 +303,7 @@ varFunDecl ft = do
       nm = drop ptrs $ last alls
       ns = intercalate " " (init alls) ++ replicate ptrs '*'
   vis <- getVisibility <$> getState
-  if nm == "operator"
+  if isOperator nm
     then funDecl nm ns
     else do
       pdecl <- paramDecl (Just alls)
@@ -312,6 +312,10 @@ varFunDecl ft = do
              spaces >> return (VarDecl pdecl vis))
         <|>
         funDecl nm ns
+
+isOperator :: String -> Bool
+isOperator "operator" = True
+isOperator t          = drop 2 (dropWhile (/= ':') t) == "operator"
 
 getVisibility :: HeaderState -> Maybe (InheritLevel, String)
 getVisibility h = 
@@ -322,7 +326,7 @@ getVisibility h =
 
 funDecl :: String -> String -> CharParser HeaderState Object
 funDecl fn ft = do
-    n <- if fn == "operator"
+    n <- if isOperator fn
            then spaces >> option "" oprchars
            else return ""
     spaces
