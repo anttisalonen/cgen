@@ -127,6 +127,7 @@ parseInterfaceFile :: [String] -> Options -> State InterfaceState Options
 parseInterfaceFile []     opts = return opts
 parseInterfaceFile (l:ls) opts = do
     case l of
+      ('#':_)          ->                     parseInterfaceFile ls opts -- comment
       "@exclude"       -> put Exclude      >> parseInterfaceFile ls opts
       "@header"        -> put Header       >> parseInterfaceFile ls opts
       "@rename"        -> put Rename       >> parseInterfaceFile ls opts
