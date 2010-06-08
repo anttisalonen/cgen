@@ -8,6 +8,9 @@ import Safe
 
 toCapital = map toUpper
 
+capitalize []     = []
+capitalize (h:hs) = toUpper h : hs
+
 replace :: String -> String -> String -> String
 replace old new str = 
   let (s1, s2, s3) = str =~ old
