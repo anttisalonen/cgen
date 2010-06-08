@@ -37,6 +37,8 @@ data Object = FunDecl {
               , enumvalues       :: [EnumVal]
               , enumclassnesting :: [(InheritLevel, String)]
               }
+            | ExternDecl String [Object]
+            | Using Bool String
     deriving (Eq, Read, Show)
 
 data InheritDecl = InheritDecl {
@@ -67,6 +69,7 @@ getFuns (o:os) =
          []              -> getFuns (map snd os2) ++ getFuns os
          ((Public, _):_) -> getFuns (map snd os2) ++ getFuns os
          _               -> getFuns os
+    (ExternDecl _ os2)      -> getFuns os2 ++ getFuns os
     _                       -> getFuns os
 
 getClasses :: [Object] -> [Object]
@@ -84,6 +87,8 @@ getObjName (TypeDef (n, _))      = n
 getObjName (ClassDecl n _ _ _ _) = n
 getObjName (VarDecl p _)         = varname p
 getObjName (EnumDef n _ _)       = n
+getObjName (ExternDecl n _)      = n
+getObjName (Using _ n)           = n
 
 isAbstractFun :: Object -> Bool
 isAbstractFun (FunDecl _ _ _ _ _ _ a) = a

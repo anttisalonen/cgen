@@ -51,7 +51,40 @@ oneobj = do
     "struct"    -> structDecl
     "typedef"   -> typedef 
     "enum"      -> enum
+    "extern"    -> extern
+    "using"     -> using
     _           -> macro w <|> varFunDecl w
+
+extern :: CharParser HeaderState Object
+extern = do
+    spaces
+    en <- quoted
+    spaces
+    objs <- try manyext <|> (do o <- oneobj; return [o])
+    return $ ExternDecl en objs
+
+  where manyext = do
+            _ <- char '{'
+            os <- many oneobj
+            spaces
+            _ <- char '}'
+            spaces
+            return os
+
+using :: CharParser HeaderState Object
+using = do
+    _ <- many1 whitespace
+    (n, iden) <- try (do
+                   _ <- string "namespace"
+                   _ <- many1 whitespace
+                   i <- identifier
+                   return (True, i))
+                 <|> (do
+                   i <- typename
+                   return (False, i))
+    spaces
+    _ <- eos
+    return $ Using n iden
 
 -- macro is a hack.
 macro w = do
