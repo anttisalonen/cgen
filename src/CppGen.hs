@@ -13,6 +13,7 @@ import Text.Regex.Posix
 import Safe
 
 import HeaderData
+import CppUtils
 import Utils
 
 publicMemberFunction :: Object -> Bool
@@ -193,13 +194,6 @@ handleTemplateTypes rens t =
       newtypes = map (renameType rens) alltypes
   in foldr (uncurry replace) ((stripConst . stripPtr) t) (zip alltypes newtypes)
 
-isConst :: String -> Bool
-isConst n = take 6 n == "const "
-
-stripConst :: String -> String
-stripConst n | isConst n = stripWhitespace $ drop 5 n 
-             | otherwise = n
-
 makeConst :: String -> String
 makeConst n = "const " ++ n
 
@@ -256,10 +250,6 @@ addClassQual enums classes rt =
                  Nothing -> rt
                  Just e  -> addNamespaceQual (map snd $ enumclassnesting e) rt
     Just c  -> addNamespaceQual (map snd $ classnesting c) rt
-
--- stripPtr " char * " = "char"
-stripPtr :: String -> String
-stripPtr = stripWhitespace . takeWhile (/= '*')
 
 -- addNamespaceQual ["aa", "bb"] "foo" = "bb::aa::foo"
 addNamespaceQual :: [String] -> String -> String
@@ -355,9 +345,6 @@ betweenAngBrackets = fst . foldr go ("", Nothing)
 -- filtering typedefs doesn't help - t1 may refer to private definitions.
 usedTypedefs :: S.Set String -> [(String, String)] -> [(String, String)]
 usedTypedefs s = filter (\(_, t2) -> t2 `S.member` s)
-
-getAllTypes :: [Object] -> S.Set String
-getAllTypes = S.fromList . map (stripConst . stripPtr) . concatMap getUsedFunTypes
 
 -- separate pointer * from other chars in function return type.
 -- remove keywords such as virtual, static, etc.
