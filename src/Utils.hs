@@ -11,6 +11,9 @@ toCapital = map toUpper
 capitalize []     = []
 capitalize (h:hs) = toUpper h : hs
 
+decapitalize []     = []
+decapitalize (h:hs) = toLower h : hs
+
 replace :: String -> String -> String -> String
 replace old new str = 
   let (s1, s2, s3) = str =~ old
@@ -35,4 +38,11 @@ switch _ []          df = df
 switch v ((n, f):ns) df
   | v == n    = f
   | otherwise = switch v ns df
+
+getSuffixBy :: Char -> String -> String
+getSuffixBy c = fst . foldr go ("", True)
+  where go x (acc, True) | x == c    = (acc, False)
+                         | otherwise = ((x:acc), True)
+        go _ (acc, False)            = (acc, False)
+
 

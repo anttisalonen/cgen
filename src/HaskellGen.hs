@@ -2,8 +2,10 @@ module HaskellGen (haskellGen)
 where
 
 import Data.List
+import Data.Maybe
 import Text.Printf
 import System.IO
+import System.FilePath
 import Control.Monad
 import qualified Data.Set as S
 
@@ -29,26 +31,155 @@ haskellGen outdir objs = do
     hPutStrLn stderr $ "Used types: "
     forM_ ctypes print
     let hstypes = nub . map capitalize $ filter (not . isStdType) $ map stripPtr ctypes
-    forM_ hstypes $ \t -> do
-        hPrintf stderr "newtype %s = %s (Ptr %s)\n" t t t
+        typefile = outdir </> "Types.hs"
+    withFile typefile WriteMode $ \h -> do
+        hPrintf h "module Types\nwhere\n\n"
+        hPutStrLn h importForeign
+        hPrintf h "type CBool = CChar -- correct?\n\n"
+        forM_ hstypes $ \t -> do
+            hPrintf h "newtype %s = %s (Ptr %s) -- nullary data type\n" t t t
 
     forM_ funs $ \(file, filefuns) ->
-        forM_ filefuns $ \fun -> 
-            if (all (\t -> isStdType (clearType t) || hsType t `elem` hstypes || t == "void") (getUsedFunTypes fun)) 
-              then
-                hPrintf stderr (hsFFIFun file fun)
-              else
-                hPrintf stderr "Function %s discarded:\n\t%s\n" (getObjName fun) (hsFFIFun file fun)
+        withFile (outdir </> ((takeBaseName file) ++ ".hs")) WriteMode $ \h -> do
+            hPrintf h "{-# LANGUAGE ForeignFunctionInterface #-}\n"
+            hPrintf h "module %s\nwhere\n\nimport Types\nimport Control.Monad\n\n" (takeBaseName file)
+            hPutStrLn h importForeign
+            forM_ filefuns $ \fun -> 
+                if (all (\t -> isStdType (clearType t) || hsType t `elem` hstypes || t == "void") (getUsedFunTypes fun)) 
+                  then
+                    addFun h hstypes file fun
+                  else
+                    hPrintf stderr "Function %s discarded:\n\t%s\n" (getObjName fun) (hsFFIFun file fun)
 
+importForeign :: String
+importForeign = "import Foreign\nimport Foreign.C.String\nimport Foreign.C.Types\n"
+
+data HsTypeType = CType | NullaryDataType | HaskellType
+
+data HsType = HsType 
+  { hsTypeType   :: HsTypeType
+  , hsTypeName   :: String
+  }
+  
+data HsVariable = HsVariable HsType String
+
+data HsKinded = HsKinded HsVariable [HsType]
+
+data HsFunction = HsFunction String [HsKinded]
+
+cPrefix :: String
+cPrefix = "c_"
+
+addFun :: Handle -> [String] -> String -> Object -> IO ()
+addFun h hstypes file fun = do
+  -- FFI import
+  hPrintf h (hsFFIFun file fun)
+
+  -- type signature
+  let hsFunc = getHsFunc hstypes fun
+  hPrintf h "%s :: %sIO %s\n" 
+                    hsfunname
+                    (printExportedHsParams (params fun)) 
+                    (printExportedHsType (rettype fun))
+
+  -- function definition
+  hPrintf h "%s %s = %s\n" 
+      hsfunname
+      (printParamList plist)
+      (hsFunDef fun)
+  hPrintf h "\n"
+ where plist :: [String]
+       plist = paramList (length (params fun))
+       hsfunname = decapitalize $ getSuffixBy '_' (funname fun)
+
+hsFunDef :: Object -> String
+hsFunDef (FunDecl fn rt ps _ _ _ _) = 
+  let ptypes = zip (paramList maxBound) $ map (\(ParamDecl _ pt _ _) -> correctType . stripConst $ pt) ps
+      cstrings = filter isCharPtr ptypes
+      isCharPtr (_, t) = t == "char*"
+      mkCString (pnm, _) = printf "withCString %s $ \\c%s -> \n  " pnm pnm
+      convfunc = convFunc $ fromMaybe "" $ cTypeToHs rt
+      resLift = if null convfunc then "" else "liftM " ++ convfunc ++ " $ "
+      funcall = cPrefix ++ fn
+      funparams = intercalate " " (map (\p -> if isCharPtr p then 'c':(fst p) else fst p) ptypes)
+  in concatMap mkCString cstrings ++ " " ++ resLift ++ " " ++ funcall ++ " " ++ funparams
+
+hsFunDef _                         = "undefined"
+
+convFunc :: String -> String
+convFunc ptype =
+  case ptype of
+    "CChar"   -> "castCharToCChar" 
+    "CFloat"  -> "realToFrac" 
+    "CDouble" -> "realToFrac" 
+    "CInt"    -> "fromIntegral" 
+    "CUInt"   -> "fromIntegral" 
+    "CShort"  -> "fromIntegral" 
+    "CUShort" -> "fromIntegral" 
+    "CLong"   -> "fromIntegral" 
+    "CULong"  -> "fromIntegral" 
+    "CBool"   -> "castCharToCChar" 
+    "CLongLong" -> "fromIntegral" 
+    "CULongLong" -> "fromIntegral" 
+    "CByte"    -> "fromIntegral" 
+    "CSize"    -> "fromIntegral" 
+    _          -> ""
+
+paramList :: Int -> [String]
+paramList n = map ('p':) (map show [1..n])
+
+printParamList :: [String] -> String
+printParamList = intercalate " "
+
+getHsFunc :: [String] -> Object -> HsFunction
+getHsFunc hstypes (FunDecl fn ft fp _ _ _ _) = 
+  HsFunction fn 
+    ((map (uncurry (getHsVariable hstypes))  
+          (zip (map varname fp) (map vartype fp))) ++ 
+          [getHsVariable hstypes "" ft])
+getHsFunc _ _ = HsFunction "" []
+
+ioType :: HsType
+ioType = HsType HaskellType "IO"
+
+ptrType :: HsType
+ptrType = HsType HaskellType "Ptr"
+
+toIO :: HsKinded -> HsKinded
+toIO (HsKinded v ts) = HsKinded v (ioType:ts)
+
+toPtr :: HsKinded -> HsKinded
+toPtr (HsKinded v ts) = HsKinded v (ptrType:ts)
+
+getHsVariable :: [String] -> String -> String -> HsKinded
+getHsVariable hstypes vn vt =
+  let ptrs    = isPtr vt
+      hstname = hsType vt
+      hstt    = if vt `elem` hstypes
+                  then NullaryDataType
+                  else if isCType vt
+                         then CType
+                         else HaskellType
+  in toPtr $ HsKinded (HsVariable (HsType hstt vt) vn) []
+
+isCType :: String -> Bool
+isCType = isJust . cleanCType
+
+printExportedHsType :: String -> String
+printExportedHsType "void" = "()"
+printExportedHsType t      =
+  case join $ fmap cleanCType $ cTypeToHs (clearType t) of
+    Nothing -> printHsType t
+    Just t' -> t'
+
+clearType :: String -> String
 clearType = stripPtr . correctType . stripConst
 
 hsFFIFun :: String -> Object -> String
-hsFFIFun file fun = printf "foreign import ccall \"%s %s\"  c_%s :: %sIO %s\n" 
-                          file (getObjName fun) (getObjName fun)
-                          (hsParams (params fun))
-                          (if isStdType (clearType $ rettype fun)
-                             then cTypeToHs (correctType . stripConst $ rettype fun)
-                             else (printHsType (rettype fun)))
+hsFFIFun file fun = printf "foreign import ccall \"%s %s\" %s%s :: %sIO %s\n" 
+                          file (getObjName fun) cPrefix (getObjName fun)
+                          (printHsParams (params fun))
+                          (printHsType (rettype fun))
 
 hsType :: String -> String
 hsType "void" = "()"
@@ -56,49 +187,77 @@ hsType t      = capitalize . stripPtr . removeNamespace . correctType . stripCon
 
 printHsType :: String -> String
 printHsType "void" = "()"
-printHsType t      = hsPointerize $ capitalize . removeNamespace . correctType . stripConst $ t
+printHsType t      = 
+  case cTypeToHs (clearType t) of
+    Nothing -> hsPointerize (isPtr ct - 1) $ capitalize . removeNamespace . correctType . stripConst $ t
+    Just t' -> hsPointerize (isPtr ct) t'
+ where ct = correctType . stripConst $ t
 
-hsPointerize t = 
-  let numptrs = isPtr t
-  in concat (replicate numptrs "(Ptr ") ++ (stripPtr t) ++ concat (replicate numptrs ")")
+hsPointerize :: Int -> String -> String
+hsPointerize numptrs t = 
+  concat (replicate numptrs "(Ptr ") ++ (stripPtr t) ++ concat (replicate numptrs ")")
 
 -- TODO: check
-cTypeToHs "float" = "CFloat"
-cTypeToHs "double" = "CDouble"
-cTypeToHs "char" = "CChar"
-cTypeToHs "int" = "CInt"
-cTypeToHs "unsigned int" = "CUInt"
-cTypeToHs "signed int" = "CInt"
-cTypeToHs "long" = "CLong"
-cTypeToHs "unsigned long" = "CULong"
-cTypeToHs "signed long" = "CLong"
-cTypeToHs "bool" = "CBool"
-cTypeToHs "short" = "CShort"
-cTypeToHs "unsigned short" = "CUShort"
-cTypeToHs "signed short" = "CShort"
-cTypeToHs "unsigned" = "CInt"
-cTypeToHs "long long" = "CLongLong"
-cTypeToHs "unsigned long long" = "CULongLong"
-cTypeToHs "int8_t" = "CChar"
-cTypeToHs "uint8_t" = "CByte"
-cTypeToHs "int16_t" = "CShort"
-cTypeToHs "uint16_t" = "CUShort"
-cTypeToHs "int32_t" = "CLong"
-cTypeToHs "uint32_t" = "CULong"
-cTypeToHs "int64_t" = "CLongLong"
-cTypeToHs "uint64_t" = "CULongLong"
-cTypeToHs "size_t" = "CSize"
-cTypeToHs "uint8" = "CByte"
-cTypeToHs "uint16" = "CUShort"
-cTypeToHs "uint32" = "CULong"
-cTypeToHs "uint64" = "CULongLong"
-cTypeToHs _ = error "Invalid C type - the function cTypeToHs doesn't match isStdType"
+cTypeToHs :: String -> Maybe String
+cTypeToHs "float" = Just "CFloat"
+cTypeToHs "double" = Just "CDouble"
+cTypeToHs "char" = Just "CChar"
+cTypeToHs "int" = Just "CInt"
+cTypeToHs "unsigned int" = Just "CUInt"
+cTypeToHs "signed int" = Just "CInt"
+cTypeToHs "long" = Just "CLong"
+cTypeToHs "unsigned long" = Just "CULong"
+cTypeToHs "signed long" = Just "CLong"
+cTypeToHs "bool" = Just "CBool"
+cTypeToHs "short" = Just "CShort"
+cTypeToHs "unsigned short" = Just "CUShort"
+cTypeToHs "signed short" = Just "CShort"
+cTypeToHs "unsigned" = Just "CInt"
+cTypeToHs "long long" = Just "CLongLong"
+cTypeToHs "unsigned long long" = Just "CULongLong"
+cTypeToHs "int8_t" = Just "CChar"
+cTypeToHs "uint8_t" = Just "CByte"
+cTypeToHs "int16_t" = Just "CShort"
+cTypeToHs "uint16_t" = Just "CUShort"
+cTypeToHs "int32_t" = Just "CLong"
+cTypeToHs "uint32_t" = Just "CULong"
+cTypeToHs "int64_t" = Just "CLongLong"
+cTypeToHs "uint64_t" = Just "CULongLong"
+cTypeToHs "size_t" = Just "CSize"
+cTypeToHs "uint8" = Just "CByte"
+cTypeToHs "uint16" = Just "CUShort"
+cTypeToHs "uint32" = Just "CULong"
+cTypeToHs "uint64" = Just "CULongLong"
+cTypeToHs _ = Nothing
 
-hsParams :: [ParamDecl] -> String
-hsParams [] = ""
-hsParams ps = 
+cleanCType :: String -> Maybe String
+cleanCType "CFloat"      = Just "Float"
+cleanCType "CDouble"     = Just "Double"
+cleanCType "CChar"       = Just "Char"
+cleanCType "CInt"        = Just "Int"
+cleanCType "CUInt"       = Just "Int"
+cleanCType "CLong"       = Just "Int"
+cleanCType "CULong"      = Just "Int"
+cleanCType "CBool"       = Just "Bool"
+cleanCType "CShort"      = Just "Int"
+cleanCType "CUShort"     = Just "Int"
+cleanCType "CLongLong"   = Just "Int"
+cleanCType "CULongLong"  = Just "Int"
+cleanCType "CByte"       = Just "Int"
+cleanCType "CSize"       = Just "Int"
+cleanCType _ = Nothing
+
+printExportedHsParams :: [ParamDecl] -> String
+printExportedHsParams [] = ""
+printExportedHsParams ps = 
   let types = map vartype ps
-  in intercalate " -> " (map hsType types) ++ " -> " 
+  in intercalate " -> " (map printExportedHsType types) ++ " -> " 
+
+printHsParams :: [ParamDecl] -> String
+printHsParams [] = ""
+printHsParams ps = 
+  let types = map vartype ps
+  in intercalate " -> " (map printHsType types) ++ " -> " 
 
 removeNamespace :: String -> String
 removeNamespace = map (\c -> if c == ':' then '_' else c)
