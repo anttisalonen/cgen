@@ -90,7 +90,7 @@ addFun h hstypes file fun = do
   hPrintf h "\n"
  where plist :: [String]
        plist = paramList (length (params fun))
-       hsfunname = decapitalize $ getSuffixBy '_' (funname fun)
+       hsfunname = decapitalize $ dropWhile (== '_') $ dropWhile (/= '_') (funname fun)
 
 hsFunDef :: Object -> String
 hsFunDef (FunDecl fn rt ps _ _ _ _) = 
