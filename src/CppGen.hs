@@ -125,6 +125,8 @@ handleHeader outdir incfiles exclclasses excls rens headername objs = do
         excludeFun f = lastDef ' ' (correctType $ rettype f) == '&' || -- TODO: allow returned references
                        or (map (\e -> funname f =~ e) excls) ||
                        or (map (\e -> fromMaybe "" (liftM snd (fnvisibility f)) =~ e) exclclasses) ||
+                       take 8 (rettype f) == "template" ||  -- TODO: allow return types that start with "template"
+                       rettype f == "operator" ||  -- conversion operator is parsed as operator as return type
                        take 8 (funname f) == "operator"  -- TODO: allow normal functions with name starting with operator
         expandFun f = addConstness . -- add const keyword if the function is const
                       renameTypes rens . -- rename types as specified by user
@@ -224,9 +226,10 @@ addNamespaceQual :: [String] -> String -> String
 addNamespaceQual ns n = concatMap (++ "::") ns ++ n
 
 -- turn a "char& param" into "*param".
+-- but, "char*& param" is turned into "*param" as well.
 correctRef :: ParamDecl -> String
 correctRef (ParamDecl nm pt _ _) =
-  if '&' `elem` take 2 (reverse pt)
+  if '&' `elem` take 2 (reverse pt) && '*' `notElem` pt
     then '*':nm
     else nm
 
@@ -312,7 +315,7 @@ correctFuncRetType f@(FunDecl _ fr _ _ _ _ _)
   = f{rettype = correctType fr}
 correctFuncRetType n = n
 
--- o(n).
+-- o(n^2).
 mangle :: [Object] -> [Object]
 mangle []     = []
 mangle (n:ns) = 
