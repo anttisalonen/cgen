@@ -47,7 +47,7 @@ haskellGen outdir objs = do
             forM_ filefuns $ \fun -> 
                 if (all (\t -> isStdType (clearType t) || hsType t `elem` hstypes || t == "void") (getUsedFunTypes fun)) 
                   then
-                    addFun h hstypes file fun
+                    addFun h file fun
                   else
                     hPrintf stderr "Function %s discarded:\n\t%s\n" (getObjName fun) (hsFFIFun file fun)
 
@@ -57,8 +57,8 @@ importForeign = "import Foreign\nimport Foreign.C.String\nimport Foreign.C.Types
 cPrefix :: String
 cPrefix = "c_"
 
-addFun :: Handle -> [String] -> String -> Object -> IO ()
-addFun h hstypes file fun = do
+addFun :: Handle -> String -> Object -> IO ()
+addFun h file fun = do
   -- FFI import
   hPrintf h (hsFFIFun file fun)
 
