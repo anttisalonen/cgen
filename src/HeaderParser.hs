@@ -315,7 +315,7 @@ varFunDecl ft = do
 
 isOperator :: String -> Bool
 isOperator "operator" = True
-isOperator t          = drop 2 (dropWhile (/= ':') t) == "operator"
+isOperator t          = takeWhile isAlpha (drop 2 (dropWhile (/= ':') t)) == "operator"
 
 getVisibility :: HeaderState -> Maybe (InheritLevel, String)
 getVisibility h = 
