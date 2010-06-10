@@ -27,8 +27,6 @@ paramFormat (p1:p2:ps) = showP p1 ++ ", " ++ paramFormat (p2:ps)
 paramFormat [p1]       = showP p1
 paramFormat []         = ""
 
--- separate pointer * from other chars.
--- remove keywords such as virtual, static, etc.
 correctParam :: ParamDecl -> ParamDecl
 correctParam p = p{vartype = correctType (vartype p)} -- TODO: arrays?
 
@@ -89,13 +87,13 @@ handleHeader outdir incfiles exclclasses excls rens headername objs = do
                 (funname fun)
                 (paramFormat (params fun))
             hPrintf h "{\n"
-            -- NOTE: do NOT call refToPointerParam or correctFuncParams
+            -- NOTE: do NOT call refToPointerParam or refParamsToPointers
             -- for prs, because then the information that the parameter
             -- is actually a reference and the pointer must be dereferenced
             -- is lost.
-            let prs = intercalate ", " $ map correctRef $ checkParamNames $ map correctParam $ params origfun
+            let prs = intercalate ", " $ map (correctRef . renameParam rens . correctParam) $ params $ correctFuncParams origfun
             switch (funname origfun)
-              [(getClname origfun,      hPrintf h "    return new %s(%s);\n" (stripConst . stripPtr $ rettype fun) prs),
+              [(getClname origfun,      hPrintf h "    return new %s(%s);\n" (stripExtra $ rettype fun) prs),
                ('~':getClname origfun,  hPrintf h "    delete this_ptr;\n")]
               (if rettype fun == "void" 
                  then hPrintf h "    this_ptr->%s(%s);\n" (funname origfun) prs
@@ -129,14 +127,19 @@ handleHeader outdir incfiles exclclasses excls rens headername objs = do
                        rettype f == "operator" ||  -- conversion operator is parsed as operator as return type
                        take 8 (funname f) == "operator"  -- TODO: allow normal functions with name starting with operator
         expandFun f = addConstness . -- add const keyword if the function is const
+                      refParamsToPointers . -- ref params to pointers
                       renameTypes rens . -- rename types as specified by user
                       addClassspaces allenums classes . -- add qualification when necessary
                       correctFuncRetType . -- remove keywords from return type
-                      correctFuncParams . -- ref to pointer, create param name if none, remove keywords
+                      correctFuncParams . -- create param name if none, remove keywords
                       finalName . -- expand function name by class and namespace
                       addThisPointer .  -- 1st parameter
                       extendFunc $ f -- constructor & destructor handling
         usedtypes  = getAllTypes funs
+
+refParamsToPointers f@(FunDecl _ _ ps _ _ _ _) =
+  f{params = map refToPointerParam ps}
+refParamsToPointers n = n
 
 renameTypes :: [(String, String)] -> Object -> Object
 renameTypes rens f@(FunDecl _ rt ps _ _ _ _) =
@@ -151,7 +154,7 @@ renameParam rens p@(ParamDecl _ pt _ _) =
 renameType :: [(String, String)] -> String -> String
 renameType rens t =
   let mnt = lookup tm rens
-      tm = (stripConst . stripPtr) t
+      tm = stripExtra t
       mf1 = if isConst t then makeConst else id
       mf2 = makePtr (isPtr t)
       nt = case mnt of
@@ -165,7 +168,7 @@ handleTemplateTypes :: [(String, String)] -> String -> String
 handleTemplateTypes rens t = 
   let alltypes = typesInType t
       newtypes = map (renameType rens) alltypes
-  in foldr (uncurry replace) ((stripConst . stripPtr) t) (zip alltypes newtypes)
+  in foldr (uncurry replace) (stripExtra t) (zip alltypes newtypes)
 
 makeConst :: String -> String
 makeConst n = "const " ++ n
@@ -185,8 +188,8 @@ abstractConstructor _       _                                  = False
 typesInType :: String -> [String]
 typesInType v =
     case betweenAngBrackets v of
-      "" -> [(stripConst . stripPtr) v]
-      n  -> map (stripConst . stripPtr) $ splitBy ',' n
+      "" -> [stripExtra v]
+      n  -> map stripExtra $ splitBy ',' n
 
 extraTypedefs :: [(String, String)] -> [(String, String)] -> [(String, String)]
 extraTypedefs ts = filter (extractSecType ts)
@@ -215,8 +218,8 @@ addParamClassQual enums classes p@(ParamDecl _ t _ _) =
 -- the qualification added is the class nesting of the found class.
 addClassQual :: [Object] -> [Object] -> String -> String
 addClassQual enums classes rt =
-  case fetchClass classes ((stripConst . stripPtr) rt) of
-    Nothing -> case fetchEnum enums ((stripConst . stripPtr) rt) of
+  case fetchClass classes (stripExtra rt) of
+    Nothing -> case fetchEnum enums (stripExtra rt) of
                  Nothing -> rt
                  Just e  -> addNamespaceQual (map snd $ enumclassnesting e) rt
     Just c  -> addNamespaceQual (map snd $ classnesting c) rt
@@ -226,19 +229,18 @@ addNamespaceQual :: [String] -> String -> String
 addNamespaceQual ns n = concatMap (++ "::") ns ++ n
 
 -- turn a "char& param" into "*param".
--- but, "char*& param" is turned into "*param" as well.
 correctRef :: ParamDecl -> String
 correctRef (ParamDecl nm pt _ _) =
-  if '&' `elem` take 2 (reverse pt) && '*' `notElem` pt
+  if '&' `elem` take 2 (reverse pt)
     then '*':nm
     else nm
 
--- change ref to pointer and separate pointer * from other chars for all params.
+-- separate pointer * from other chars for all params.
 -- if param has no name, create one.
 -- remove keywords such as virtual, static, etc.
 correctFuncParams :: Object -> Object
 correctFuncParams f@(FunDecl _ _ ps _ _ _ _) = 
-  f{params = checkParamNames (map (correctParam . refToPointerParam) ps)}
+  f{params = checkParamNames (map (correctParam) ps)}
 correctFuncParams n                                 = n
 
 -- for each unnamed parameter,
@@ -248,7 +250,7 @@ checkParamNames = go (1 :: Int)
   where go _ []     = []
         go n (p:ps) =
           let (p', n') = case varname p of
-                           "" -> (p{varname = (stripConst . stripPtr $ vartype p) ++ (show n)}, n + 1)
+                           "" -> (p{varname = (stripExtra $ vartype p) ++ (show n)}, n + 1)
                            _  -> (p, n)
           in p':(go n' ps)
 

@@ -27,21 +27,30 @@ sepChar st (x:y:xs)    = if x /= ' ' && x `notElem` st && y `elem` st
                            else x : sepChar st (y:xs)
 sepChar _  l           = l
 
--- separate pointer * from other chars.
+-- separate pointer * and ref & from other chars.
 -- remove keywords such as virtual, static, etc.
 correctType :: String -> String
 correctType t =
   let ns = words t
   in case ns of
        []  -> ""
-       ms  -> intercalate " " $ sepChars "*" $ filter isType ms
+       ms  -> intercalate " " $ sepChars "&" $ sepChars "*" $ filter isType ms
 
 isConst :: String -> Bool
 isConst n = take 6 n == "const "
 
+stripExtra :: String -> String
+stripExtra = stripConst . stripRef . stripPtr
+
+stripChar :: Char -> String -> String
+stripChar c = stripWhitespace . takeWhile (/= c)
+
 -- stripPtr " char * " = "char"
 stripPtr :: String -> String
-stripPtr = stripWhitespace . takeWhile (/= '*')
+stripPtr = stripChar '*'
+
+stripRef :: String -> String
+stripRef = stripChar '&'
 
 stripConst :: String -> String
 stripConst n | isConst n = stripWhitespace $ drop 5 n 
