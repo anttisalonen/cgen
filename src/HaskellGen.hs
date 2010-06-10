@@ -54,19 +54,6 @@ haskellGen outdir objs = do
 importForeign :: String
 importForeign = "import Foreign\nimport Foreign.C.String\nimport Foreign.C.Types\n"
 
-data HsTypeType = CType | NullaryDataType | HaskellType
-
-data HsType = HsType 
-  { hsTypeType   :: HsTypeType
-  , hsTypeName   :: String
-  }
-  
-data HsVariable = HsVariable HsType String
-
-data HsKinded = HsKinded HsVariable [HsType]
-
-data HsFunction = HsFunction String [HsKinded]
-
 cPrefix :: String
 cPrefix = "c_"
 
@@ -76,7 +63,6 @@ addFun h hstypes file fun = do
   hPrintf h (hsFFIFun file fun)
 
   -- type signature
-  -- let hsFunc = getHsFunc hstypes fun
   hPrintf h "%s :: %sIO %s\n" 
                     hsfunname
                     (printExportedHsParams (params fun)) 
@@ -138,40 +124,6 @@ paramList n = map ('p':) (map show [1..n])
 
 printParamList :: [String] -> String
 printParamList = intercalate " "
-
-getHsFunc :: [String] -> Object -> HsFunction
-getHsFunc hstypes (FunDecl fn ft fp _ _ _ _) = 
-  HsFunction fn 
-    ((map (uncurry (getHsVariable hstypes))  
-          (zip (map varname fp) (map vartype fp))) ++ 
-          [getHsVariable hstypes "" ft])
-getHsFunc _ _ = HsFunction "" []
-
-ioType :: HsType
-ioType = HsType HaskellType "IO"
-
-ptrType :: HsType
-ptrType = HsType HaskellType "Ptr"
-
-toIO :: HsKinded -> HsKinded
-toIO (HsKinded v ts) = HsKinded v (ioType:ts)
-
-toPtr :: HsKinded -> HsKinded
-toPtr (HsKinded v ts) = HsKinded v (ptrType:ts)
-
-getHsVariable :: [String] -> String -> String -> HsKinded
-getHsVariable hstypes vn vt =
-  let ptrs    = isPtr vt
-      hstname = hsType vt
-      hstt    = if vt `elem` hstypes
-                  then NullaryDataType
-                  else if isCType vt
-                         then CType
-                         else HaskellType
-  in toPtr $ HsKinded (HsVariable (HsType hstt vt) vn) []
-
-isCType :: String -> Bool
-isCType = isJust . cleanCType
 
 printExportedHsType :: String -> String
 printExportedHsType "void"  = "()"
