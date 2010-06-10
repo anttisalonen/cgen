@@ -1,0 +1,11 @@
+C++ parsing:
+-
+
+C/C++ generation:
+- functions returning a reference are filtered out
+- Static member functions have this pointer
+- try-catch handling is missing
+
+Haskell generation:
+- Enums must be improved
+
