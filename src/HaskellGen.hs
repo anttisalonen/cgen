@@ -76,7 +76,7 @@ addFun h hstypes file fun = do
   hPrintf h (hsFFIFun file fun)
 
   -- type signature
-  let hsFunc = getHsFunc hstypes fun
+  -- let hsFunc = getHsFunc hstypes fun
   hPrintf h "%s :: %sIO %s\n" 
                     hsfunname
                     (printExportedHsParams (params fun)) 
@@ -95,21 +95,24 @@ addFun h hstypes file fun = do
 hsFunDef :: Object -> String
 hsFunDef (FunDecl fn rt ps _ _ _ _) = 
   let ptypes = zip (paramList maxBound) $ map (\(ParamDecl _ pt _ _) -> correctType . stripConst $ pt) ps
-      cstrings = filter isCharPtr ptypes
-      isCharPtr (_, t) = t == "char*"
+      cstrings = filter (\(_, t) -> t == "char*") ptypes
       mkCString (pnm, _) = printf "withCString %s $ \\c%s -> \n  " pnm pnm
-      convfunc = convFunc $ fromMaybe "" $ cTypeToHs rt
-      resLift = if null convfunc then "" else "liftM " ++ convfunc ++ " $ "
+      resLift = if null (convRevFunc rt) then "" else "liftM " ++ convRevFunc rt ++ " $ "
       funcall = cPrefix ++ fn
-      funparams = intercalate " " (map (\p -> if isCharPtr p then 'c':(fst p) else fst p) ptypes)
+      funparams = intercalate " " (map paramcall ptypes)
+      paramcall :: (String, String) -> String
+      paramcall (pn, pt) = pprefix ++ pname ++ psuffix
+         where pname              = if pt == "char*" then ('c':pn) else pn
+               (pprefix, psuffix) = case convFunc pt of
+                                      "" -> ("", "")
+                                      s  -> ("(" ++ s ++ " ", ")")
   in concatMap mkCString cstrings ++ " " ++ resLift ++ " " ++ funcall ++ " " ++ funparams
-
 hsFunDef _                         = "undefined"
 
 convFunc :: String -> String
 convFunc ptype =
-  case ptype of
-    "CChar"   -> "castCharToCChar" 
+  case fromMaybe "" $ cTypeToHs ptype of
+    "CChar"   -> "castCCharToChar" 
     "CFloat"  -> "realToFrac" 
     "CDouble" -> "realToFrac" 
     "CInt"    -> "fromIntegral" 
@@ -118,12 +121,17 @@ convFunc ptype =
     "CUShort" -> "fromIntegral" 
     "CLong"   -> "fromIntegral" 
     "CULong"  -> "fromIntegral" 
-    "CBool"   -> "castCharToCChar" 
+    "CBool"   -> "fromBool" 
     "CLongLong" -> "fromIntegral" 
     "CULongLong" -> "fromIntegral" 
     "CByte"    -> "fromIntegral" 
     "CSize"    -> "fromIntegral" 
     _          -> ""
+
+convRevFunc :: String -> String
+convRevFunc t
+  | fromMaybe "" (cTypeToHs t) == "CBool" = "toBool"
+  | otherwise = convFunc t
 
 paramList :: Int -> [String]
 paramList n = map ('p':) (map show [1..n])
@@ -166,11 +174,14 @@ isCType :: String -> Bool
 isCType = isJust . cleanCType
 
 printExportedHsType :: String -> String
-printExportedHsType "void" = "()"
-printExportedHsType t      =
-  case join $ fmap cleanCType $ cTypeToHs (clearType t) of
-    Nothing -> printHsType t
-    Just t' -> t'
+printExportedHsType "void"  = "()"
+printExportedHsType t 
+  | correctType (stripConst t) == "char*"
+     = "String"
+  | otherwise =
+      case join $ fmap cleanCType $ cTypeToHs (clearType t) of
+        Nothing -> printHsType t
+        Just t' -> t'
 
 clearType :: String -> String
 clearType = stripPtr . correctType . stripConst
