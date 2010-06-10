@@ -99,20 +99,19 @@ convFunc :: String -> String
 convFunc ptype =
   case fromMaybe "" $ cTypeToHs ptype of
     "CChar"   -> "castCCharToChar" 
-    "CFloat"  -> "realToFrac" 
-    "CDouble" -> "realToFrac" 
-    "CInt"    -> "fromIntegral" 
-    "CUInt"   -> "fromIntegral" 
+    "CSChar"  -> "fromIntegral" 
+    "CUChar"  -> "fromIntegral" 
     "CShort"  -> "fromIntegral" 
     "CUShort" -> "fromIntegral" 
+    "CInt"    -> "fromIntegral" 
+    "CUInt"   -> "fromIntegral" 
+    "CSize"   -> "fromIntegral" 
     "CLong"   -> "fromIntegral" 
     "CULong"  -> "fromIntegral" 
+    "CFloat"  -> "realToFrac" 
+    "CDouble" -> "realToFrac" 
     "CBool"   -> "fromBool" 
-    "CLongLong" -> "fromIntegral" 
-    "CULongLong" -> "fromIntegral" 
-    "CByte"    -> "fromIntegral" 
-    "CSize"    -> "fromIntegral" 
-    _          -> ""
+    _         -> ""
 
 convRevFunc :: String -> String
 convRevFunc t
@@ -160,7 +159,6 @@ hsPointerize :: Int -> String -> String
 hsPointerize numptrs t = 
   concat (replicate numptrs "(Ptr ") ++ (stripPtr t) ++ concat (replicate numptrs ")")
 
--- TODO: check
 cTypeToHs :: String -> Maybe String
 cTypeToHs "float" = Just "CFloat"
 cTypeToHs "double" = Just "CDouble"
@@ -176,27 +174,29 @@ cTypeToHs "short" = Just "CShort"
 cTypeToHs "unsigned short" = Just "CUShort"
 cTypeToHs "signed short" = Just "CShort"
 cTypeToHs "unsigned" = Just "CInt"
-cTypeToHs "long long" = Just "CLongLong"
-cTypeToHs "unsigned long long" = Just "CULongLong"
+cTypeToHs "long long" = Just "gLong"
+cTypeToHs "unsigned long long" = Just "CULong"
 cTypeToHs "int8_t" = Just "CChar"
-cTypeToHs "uint8_t" = Just "CByte"
+cTypeToHs "uint8_t" = Just "CUChar"
 cTypeToHs "int16_t" = Just "CShort"
 cTypeToHs "uint16_t" = Just "CUShort"
 cTypeToHs "int32_t" = Just "CLong"
 cTypeToHs "uint32_t" = Just "CULong"
-cTypeToHs "int64_t" = Just "CLongLong"
-cTypeToHs "uint64_t" = Just "CULongLong"
+cTypeToHs "int64_t" = Just "CLong"
+cTypeToHs "uint64_t" = Just "CULong"
 cTypeToHs "size_t" = Just "CSize"
-cTypeToHs "uint8" = Just "CByte"
+cTypeToHs "uint8" = Just "CUChar"
 cTypeToHs "uint16" = Just "CUShort"
 cTypeToHs "uint32" = Just "CULong"
-cTypeToHs "uint64" = Just "CULongLong"
+cTypeToHs "uint64" = Just "CULong"
 cTypeToHs _ = Nothing
 
 cleanCType :: String -> Maybe String
 cleanCType "CFloat"      = Just "Float"
 cleanCType "CDouble"     = Just "Double"
 cleanCType "CChar"       = Just "Char"
+cleanCType "CSChar"      = Just "Int"
+cleanCType "CUChar"      = Just "Int"
 cleanCType "CInt"        = Just "Int"
 cleanCType "CUInt"       = Just "Int"
 cleanCType "CLong"       = Just "Int"
@@ -204,9 +204,6 @@ cleanCType "CULong"      = Just "Int"
 cleanCType "CBool"       = Just "Bool"
 cleanCType "CShort"      = Just "Int"
 cleanCType "CUShort"     = Just "Int"
-cleanCType "CLongLong"   = Just "Int"
-cleanCType "CULongLong"  = Just "Int"
-cleanCType "CByte"       = Just "Int"
 cleanCType "CSize"       = Just "Int"
 cleanCType _ = Nothing
 
