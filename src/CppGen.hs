@@ -91,7 +91,7 @@ handleHeader outdir incfiles exclclasses excls rens headername objs = do
             -- for prs, because then the information that the parameter
             -- is actually a reference and the pointer must be dereferenced
             -- is lost.
-            let prs = intercalate ", " $ map (correctRef . renameParam rens . correctParam) $ params $ correctFuncParams origfun
+            let prs = intercalate ", " $ map (correctRef . renameParam rens) $ params $ correctFuncParams origfun
             switch (funname origfun)
               [(getClname origfun,      hPrintf h "    return new %s(%s);\n" (stripExtra $ rettype fun) prs),
                ('~':getClname origfun,  hPrintf h "    delete this_ptr;\n")]
@@ -157,18 +157,17 @@ renameType rens t =
       tm = stripExtra t
       mf1 = if isConst t then makeConst else id
       mf2 = makePtr (isPtr t)
-      nt = case mnt of
-             Nothing -> if '<' `elem` t && '>' `elem` t
-                          then handleTemplateTypes rens t
-                          else tm
-             Just t' -> t'
-  in (mf1 . mf2) nt
+  in case mnt of
+       Nothing -> if '<' `elem` t && '>' `elem` t
+                    then handleTemplateTypes rens t
+                    else t
+       Just t' -> (mf1 . mf2) t'
 
 handleTemplateTypes :: [(String, String)] -> String -> String
 handleTemplateTypes rens t = 
   let alltypes = typesInType t
       newtypes = map (renameType rens) alltypes
-  in foldr (uncurry replace) (stripExtra t) (zip alltypes newtypes)
+  in foldr (uncurry replace) t (zip alltypes newtypes)
 
 makeConst :: String -> String
 makeConst n = "const " ++ n
