@@ -20,8 +20,8 @@ import Text.Regex.Posix
 import HeaderParser
 import HeaderData
 import CppGen
-import HaskellGen
 import Utils
+import Options
 import DeriveMod
 
 data Options = Options
@@ -54,7 +54,6 @@ options = [
   , Option []    ["check-super"]   (NoArg  (setChecksuperclasses True))                 "report error if super classes aren't found"
   , Option []    ["rename"]        (ReqArg (addRenamedTypes) "oldtype|newtype")         "rename a type by another one"
   , Option []    ["interface"]     (ReqArg (setInterfacefile) "file")                   "define input interface file"
-  , Option []    ["hs-output"]     (ReqArg (setHsoutpath . Just) "Directory")           "enable generation and set the output directory for Haskell files"
   , Option []    ["dump"]          (NoArg  (setDumpmode True))                          "simply dump the parsed data of the header"
   ]
 
@@ -74,7 +73,7 @@ main = do
     putStrLn $ usageInfo ("Usage: " ++ pr ++ " <options> <C++ header files>") options
     exitWith (ExitFailure 1)
   let prevopts = foldl' (flip ($)) defaultOptions actions
-  opts <- handleInterfaceFile prevopts
+  opts <- handleInterfaceFile (interfacefile prevopts) None handleOptionsLine prevopts
   contents <- mapM readFile rest
   let parses = map parseHeader contents
       (perrs, press) = partitionEithers parses
@@ -96,53 +95,26 @@ main = do
                           else Nothing) 
                        (renamedtypes opts) 
                 $ zip (map takeFileName rest) press
-          case hsoutpath opts of
-            Nothing    -> exitWith ExitSuccess
-            Just hsout -> handleHaskell hsout (map takeFileName rest) (outputdir opts)
-
-handleHaskell :: FilePath -> [FilePath] -> FilePath -> IO ()
-handleHaskell hsout initfilenames indir = do
-    let filenames = map (indir </>) initfilenames
-    gencontents <- mapM readFile filenames
-    let genparses = map parseHeader gencontents
-        (genperrs, genpress) = partitionEithers genparses
-    case genperrs of
-      ((str, err):_) -> do
-          putStrLn str
-          putStrLn $ "Could not parse generated file (!): " ++ show err
-          exitWith (ExitFailure 3)
-      []             -> do
-          createDirectoryIfMissing True hsout
-          haskellGen hsout $ zip (map takeFileName filenames) genpress
           exitWith ExitSuccess
 
-handleInterfaceFile :: Options -> IO Options
-handleInterfaceFile oldopts | null (interfacefile oldopts) = return oldopts
-                            | otherwise = do
-    contents <- readFile (interfacefile oldopts)
-    let ls = lines contents
-    return $ flip evalState None (parseInterfaceFile ls oldopts)
-
-parseInterfaceFile :: [String] -> Options -> State InterfaceState Options
-parseInterfaceFile []     opts = return opts
-parseInterfaceFile (l:ls) opts = do
+handleOptionsLine :: String -> State InterfaceState (Options -> Options)
+handleOptionsLine l = do
     case l of
-      ('#':_)          ->                     parseInterfaceFile ls opts -- comment
-      "@exclude"       -> put Exclude      >> parseInterfaceFile ls opts
-      "@header"        -> put Header       >> parseInterfaceFile ls opts
-      "@rename"        -> put Rename       >> parseInterfaceFile ls opts
-      "@exclude-class" -> put ExcludeClass >> parseInterfaceFile ls opts
-      ""               ->                     parseInterfaceFile ls opts
-      ('~':_)          -> put None         >> parseInterfaceFile ls opts
+      ('#':_)          -> return id            -- comment
+      "@exclude"       -> put Exclude >> return id
+      "@header"        -> put Header >> return id
+      "@rename"        -> put Rename >> return id
+      "@exclude-class" -> put ExcludeClass >> return id
+      ""               -> return id
+      ('~':_)          -> put None >> return id
       n -> do
         v <- get
-        let ofun = case v of
-                   Exclude      -> modExcludepatterns (n:)
-                   Header       -> modIncludefiles (n:)
-                   Rename       -> addRenamedTypes n
-                   ExcludeClass -> modExcludeclasses (n:)
-                   None         -> id
-        parseInterfaceFile ls (ofun opts)
+        return $ case v of
+          Exclude      -> modExcludepatterns (n:)
+          Header       -> modIncludefiles (n:)
+          Rename       -> addRenamedTypes n
+          ExcludeClass -> modExcludeclasses (n:)
+          None         -> id
 
 data InterfaceState = None | Exclude | ExcludeClass | Header | Rename
 
