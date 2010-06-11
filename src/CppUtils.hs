@@ -18,14 +18,15 @@ isType "union"   = False
 isType "inline"  = False
 isType _         = True
 
-sepChars :: String -> [String] -> [String]
-sepChars st = map (sepChar st)
+combChars :: String -> [String] -> [String]
+combChars st = map (combChar st)
 
-sepChar :: String -> String -> String
-sepChar st (x:y:xs)    = if x /= ' ' && x `notElem` st && y `elem` st
-                           then x {-: ' '-} : sepChar st (y:xs)
-                           else x : sepChar st (y:xs)
-sepChar _  l           = l
+combChar :: String -> String -> String
+combChar st (x:y:xs)
+  | x == ' ' && y == ' '    = combChar st xs
+  | x == ' ' && y `elem` st = y : combChar st xs
+  | otherwise               = x : combChar st (y:xs)
+combChar _  l           = l
 
 -- separate pointer * and ref & from other chars.
 -- remove keywords such as virtual, static, etc.
@@ -34,7 +35,7 @@ correctType t =
   let ns = words t
   in case ns of
        []  -> ""
-       ms  -> intercalate " " $ sepChars "&" $ sepChars "*" $ filter isType ms
+       ms  -> intercalate " " $ combChars "&" $ combChars "*" $ filter isType ms
 
 isConst :: String -> Bool
 isConst n = take 6 n == "const "
