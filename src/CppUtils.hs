@@ -26,6 +26,7 @@ combChar st (x:y:xs)
   | x == ' ' && y == ' '    = combChar st xs
   | x == ' ' && y `elem` st = y : combChar st xs
   | otherwise               = x : combChar st (y:xs)
+combChar _  " "         = ""
 combChar _  l           = l
 
 -- separate pointer * and ref & from other chars.
@@ -35,7 +36,7 @@ correctType t =
   let ns = words t
   in case ns of
        []  -> ""
-       ms  -> intercalate " " $ combChars "&" $ combChars "*" $ filter isType ms
+       ms  -> combChar "*&" $ intercalate " " $ filter isType ms
 
 isConst :: String -> Bool
 isConst n = take 6 n == "const "
