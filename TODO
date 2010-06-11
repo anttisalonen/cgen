@@ -8,4 +8,5 @@ C/C++ generation:
 
 Haskell generation:
 - Enums must be improved
+- Out-params
 
