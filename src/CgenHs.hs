@@ -58,8 +58,8 @@ handleOptionsLine l = do
           Exclude      -> modExcludepatterns (n:)
           DefaultIn    -> modDefaultins (n:)
           DefaultOut   -> modDefaultouts (n:)
-          InParam      -> modInparams (n:)
-          OutParam     -> modOutparams (n:)
+          InParam      -> modInparameters (n:)
+          OutParam     -> modOutparameters (n:)
           None         -> id
 
 handleHaskell :: Options -> [FilePath] -> IO ()

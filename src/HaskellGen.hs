@@ -24,8 +24,8 @@ data Options = Options
   , excludepatterns   :: [String] 
   , defaultins        :: [String] 
   , defaultouts       :: [String] 
-  , inparams          :: [String] 
-  , outparams         :: [String] 
+  , inparameters      :: [String] 
+  , outparameters     :: [String] 
   }
   deriving (Show)
 $(deriveMods ''Options)
@@ -34,6 +34,8 @@ haskellGen :: Options -> [(FilePath, [Object])] -> IO ()
 haskellGen opts objs = do
     let outdir   = outputdir opts
         excls    = excludepatterns opts
+        dins     = defaultins opts ++ ctypes
+        douts    = defaultouts opts
         funs     = map (apSnd (filter (\f -> not $ or (map (\e -> funname f =~ e) excls)))) $ map (apSnd getFuns) objs
         alltypes = getAllTypesWithPtr (concatMap snd funs)
         (cpptypes, rejtypes) = S.partition (\t -> t /= "void" && 
@@ -60,12 +62,34 @@ haskellGen opts objs = do
             hPrintf h "{-# LANGUAGE ForeignFunctionInterface #-}\n"
             hPrintf h "module %s\nwhere\n\nimport Types\nimport Control.Monad\n\n" (takeBaseName file)
             hPutStrLn h importForeign
-            forM_ filefuns $ \fun -> 
-                if (all (\t -> isStdType (clearType t) || hsType t `elem` hstypes || t == "void") (getUsedFunTypes fun)) 
-                  then
-                    addFun h file fun
+            forM_ filefuns $ \fun -> do
+                let inparams = map (removeNamespace . stripConst . correctType) $ map vartype (params fun)
+                    retparam = removeNamespace . stripConst . correctType $ rettype fun
+                if typesValid dins douts hstypes (retparam : inparams)
+                  then do
+                    addFun h dins douts file inparams retparam (getObjName fun)
                   else
-                    hPrintf stderr "Function %s discarded:\n\t%s\n" (getObjName fun) (hsFFIFun file fun)
+                    hPrintf stderr "Function %s discarded:\n\t%s\n" (getObjName fun) (hsFFIFun file (getObjName fun) inparams retparam)
+
+-- checks whether the given types can be used.
+-- The types can be used, if:
+-- The type is a standard c type with a defined meaning, or
+-- the type is included in the list of other (accepted) types, or
+-- the type is void.
+--
+-- The meaning (in/out/in+out) of a standard c type is "defined", if
+-- the type is not a pointer, or
+-- the type is a pointer, and the meaning is given. (not yet implemented)
+typesValid :: [String] -> [String] -> [String] -> [String] -> Bool
+typesValid pins pouts hstypes = 
+  all (\t -> (t == "void") || 
+             (isStdType t) || 
+             (hsType t `elem` hstypes) ||
+             ((isStdType (stripPtr t) || hsType (stripPtr t) `elem` hstypes) && paramDefined pins pouts t))
+
+paramDefined :: [String] -> [String] -> String -> Bool
+paramDefined pins pouts t =
+  isStdType (clearType t) || (t `elem` pins || t `elem` pouts)
 
 importForeign :: String
 importForeign = "import Foreign\nimport Foreign.C.String\nimport Foreign.C.Types\n"
@@ -73,33 +97,34 @@ importForeign = "import Foreign\nimport Foreign.C.String\nimport Foreign.C.Types
 cPrefix :: String
 cPrefix = "c_"
 
-addFun :: Handle -> String -> Object -> IO ()
-addFun h file fun = do
+-- TODO: use pouts.
+addFun :: Handle -> [String] -> [String] -> String -> [String] -> String -> String -> IO ()
+addFun h pins pouts file inparams retparam fname = do
   -- FFI import
-  hPrintf h (hsFFIFun file fun)
+  hPrintf h (hsFFIFun file fname inparams retparam)
 
   -- type signature
   hPrintf h "%s :: %sIO %s\n" 
                     hsfunname
-                    (printExportedHsParams (params fun)) 
-                    (printExportedHsType (rettype fun))
+                    (printExportedHsParams inparams)
+                    (printExportedHsType retparam)
 
   -- function definition
   hPrintf h "%s %s = %s\n" 
       hsfunname
       (printParamList plist)
-      (hsFunDef fun)
+      (hsFunDef fname inparams retparam)
   hPrintf h "\n"
  where plist :: [String]
-       plist = paramList (length (params fun))
-       hsfunname = decapitalize $ dropWhile (== '_') $ dropWhile (/= '_') (funname fun)
+       plist = paramList (length inparams)
+       hsfunname = decapitalize $ dropWhile (== '_') $ dropWhile (/= '_') fname
 
-hsFunDef :: Object -> String
-hsFunDef (FunDecl fn rt ps _ _ _ _) = 
-  let ptypes = zip (paramList maxBound) $ map (\(ParamDecl _ pt _ _) -> correctType . stripConst $ pt) ps
+hsFunDef :: String -> [String] -> String -> String
+hsFunDef fn inparams retparam = 
+  let ptypes = zip (paramList maxBound) $ map (correctType . stripConst) inparams
       cstrings = filter (\(_, t) -> t == "char*") ptypes
       mkCString (pnm, _) = printf "withCString %s $ \\c%s -> \n  " pnm pnm
-      resLift = if null (convRevFunc rt) then "" else "liftM " ++ convRevFunc rt ++ " $ "
+      resLift = if null (convRevFunc retparam) then "" else "liftM " ++ convRevFunc retparam ++ " $ "
       funcall = cPrefix ++ fn
       funparams = intercalate " " (map paramcall ptypes)
       paramcall :: (String, String) -> String
@@ -109,7 +134,6 @@ hsFunDef (FunDecl fn rt ps _ _ _ _) =
                                       "" -> ("", "")
                                       s  -> ("(" ++ s ++ " ", ")")
   in concatMap mkCString cstrings ++ " " ++ resLift ++ " " ++ funcall ++ " " ++ funparams
-hsFunDef _                         = "undefined"
 
 convFunc :: String -> String
 convFunc ptype =
@@ -153,15 +177,15 @@ printExportedHsType t
 clearType :: String -> String
 clearType = stripPtr . correctType . stripConst
 
-hsFFIFun :: String -> Object -> String
-hsFFIFun file fun = printf "foreign import ccall \"%s %s\" %s%s :: %sIO %s\n" 
-                          file (getObjName fun) cPrefix (getObjName fun)
-                          (printHsParams (params fun))
-                          (printHsType (rettype fun))
+hsFFIFun :: String -> String -> [String] -> String -> String
+hsFFIFun file fn inparams retparam = printf "foreign import ccall \"%s %s\" %s%s :: %sIO %s\n" 
+                          file fn cPrefix fn
+                          (printHsParams inparams)
+                          (printHsType retparam)
 
 hsType :: String -> String
 hsType "void" = "()"
-hsType t      = capitalize . stripPtr . removeNamespace . correctType . stripConst $ t
+hsType t      = capitalize . removeNamespace . correctType . stripConst $ t
 
 printHsType :: String -> String
 printHsType "void" = "()"
@@ -223,17 +247,15 @@ cleanCType "CUShort"     = Just "Int"
 cleanCType "CSize"       = Just "Int"
 cleanCType _ = Nothing
 
-printExportedHsParams :: [ParamDecl] -> String
+printExportedHsParams :: [String] -> String
 printExportedHsParams [] = ""
-printExportedHsParams ps = 
-  let types = map vartype ps
-  in intercalate " -> " (map printExportedHsType types) ++ " -> " 
+printExportedHsParams types = 
+  intercalate " -> " (map printExportedHsType types) ++ " -> " 
 
-printHsParams :: [ParamDecl] -> String
+printHsParams :: [String] -> String
 printHsParams [] = ""
-printHsParams ps = 
-  let types = map vartype ps
-  in intercalate " -> " (map printHsType types) ++ " -> " 
+printHsParams types = 
+  intercalate " -> " (map printHsType types) ++ " -> " 
 
 removeNamespace :: String -> String
 removeNamespace = map (\c -> if c == ':' then '_' else c)
