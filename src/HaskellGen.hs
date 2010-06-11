@@ -1,4 +1,5 @@
-module HaskellGen (haskellGen)
+{-# LANGUAGE TemplateHaskell #-}
+module HaskellGen
 where
 
 import Data.List
@@ -14,10 +15,26 @@ import Text.Regex.Posix
 import HeaderData
 import CppUtils
 import Utils
+import DeriveMod
 
-haskellGen :: FilePath -> [String] -> [(FilePath, [Object])] -> IO ()
-haskellGen outdir excls objs = do
-    let funs     = map (apSnd (filter (\f -> not $ or (map (\e -> funname f =~ e) excls)))) $ map (apSnd getFuns) objs
+data Options = Options
+  {
+    outputdir         :: FilePath
+  , interfacefile     :: String
+  , excludepatterns   :: [String] 
+  , defaultins        :: [String] 
+  , defaultouts       :: [String] 
+  , inparams          :: [String] 
+  , outparams         :: [String] 
+  }
+  deriving (Show)
+$(deriveMods ''Options)
+
+haskellGen :: Options -> [(FilePath, [Object])] -> IO ()
+haskellGen opts objs = do
+    let outdir   = outputdir opts
+        excls    = excludepatterns opts
+        funs     = map (apSnd (filter (\f -> not $ or (map (\e -> funname f =~ e) excls)))) $ map (apSnd getFuns) objs
         alltypes = getAllTypesWithPtr (concatMap snd funs)
         (cpptypes, rejtypes) = S.partition (\t -> t /= "void" && 
                                            t /= "void*" && 
