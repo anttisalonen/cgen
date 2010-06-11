@@ -47,7 +47,7 @@ main = do
     exitWith (ExitFailure 1)
   let prevopts = foldl' (flip ($)) defaultOptions actions
   opts <- handleInterfaceFile (interfacefile prevopts) None handleOptionsLine prevopts
-  handleHaskell (outputdir opts) rest
+  handleHaskell (outputdir opts) (excludepatterns opts) rest
   exitWith ExitSuccess
 
 data InterfaceState = None | Exclude
@@ -65,8 +65,8 @@ handleOptionsLine l = do
           Exclude      -> modExcludepatterns (n:)
           None         -> id
 
-handleHaskell :: FilePath -> [FilePath] -> IO ()
-handleHaskell hsout filenames = do
+handleHaskell :: FilePath -> [String] -> [FilePath] -> IO ()
+handleHaskell hsout excls filenames = do
     gencontents <- mapM readFile filenames
     let genparses = map parseHeader gencontents
         (genperrs, genpress) = partitionEithers genparses
@@ -77,6 +77,6 @@ handleHaskell hsout filenames = do
           exitWith (ExitFailure 2)
       []             -> do
           createDirectoryIfMissing True hsout
-          haskellGen hsout $ zip (map takeFileName filenames) genpress
+          haskellGen hsout excls $ zip (map takeFileName filenames) genpress
           exitWith ExitSuccess
 

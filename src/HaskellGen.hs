@@ -9,16 +9,15 @@ import System.FilePath
 import Control.Monad
 import qualified Data.Set as S
 
+import Text.Regex.Posix
+
 import HeaderData
 import CppUtils
 import Utils
 
-apSnd :: (b -> c) -> (a, b) -> (a, c)
-apSnd fun (a, b) = (a, fun b)
-
-haskellGen :: FilePath -> [(FilePath, [Object])] -> IO ()
-haskellGen outdir objs = do
-    let funs     = map (apSnd getFuns) objs
+haskellGen :: FilePath -> [String] -> [(FilePath, [Object])] -> IO ()
+haskellGen outdir excls objs = do
+    let funs     = map (apSnd (filter (\f -> not $ or (map (\e -> funname f =~ e) excls)))) $ map (apSnd getFuns) objs
         alltypes = getAllTypesWithPtr (concatMap snd funs)
         (cpptypes, rejtypes) = S.partition (\t -> t /= "void" && 
                                            t /= "void*" && 

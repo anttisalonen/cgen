@@ -45,4 +45,7 @@ getSuffixBy c = fst . foldr go ("", True)
                          | otherwise = ((x:acc), True)
         go _ (acc, False)            = (acc, False)
 
+apSnd :: (b -> c) -> (a, b) -> (a, c)
+apSnd fun (a, b) = (a, fun b)
+
 
