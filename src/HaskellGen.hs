@@ -148,7 +148,7 @@ hsFunDefinition h = printf "%s %s = %s"
     hsFunDef :: String -> [(CConv, String)] -> HsConv -> String
     hsFunDef fn inparams retparam = 
       let ptypes = zip (paramList maxBound) (map (correctType . stripConst . snd) inparams)
-          cstrings = filter (\(_, t) -> t == "char*") ptypes
+          cstrings = filter (\(_, t) -> t == "String") ptypes
           mkCString (pnm, _) = printf "withCString %s $ \\c%s -> \n  " pnm pnm
           resLift = case retparam of
                       NoHsConv -> ""
@@ -156,12 +156,13 @@ hsFunDefinition h = printf "%s %s = %s"
           funcall = cPrefix ++ fn
           funparams = intercalate " " (map paramcall (zip inparams (map fst ptypes)))
           paramcall :: ((CConv, String), String) -> String
-          paramcall ((cv, _), pt) = pprefix ++ pname ++ psuffix
-             where pname              = pt
+          paramcall ((cv, ct), pt) = pprefix ++ pname ++ psuffix
+             where pname              = if ct == "String"
+                                          then 'c' : pt
+                                          else pt
                    (pprefix, psuffix) = case cv of
-                                          NoCConv      -> ("", "")
                                           CConvFunc n  -> ("(" ++ n ++ " ", ")")
-                                          WithLambda n -> error "WithLambda case not defined in hsFunDef"
+                                          _            -> ("", "")
       in concatMap mkCString cstrings ++ " " ++ resLift ++ " " ++ funcall ++ " " ++ funparams
 
 -- prints out the haskell function declaration and definition.
