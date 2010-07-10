@@ -98,25 +98,19 @@ main = do
           exitWith ExitSuccess
 
 handleOptionsLine :: String -> State InterfaceState (Options -> Options)
-handleOptionsLine l = do
-    case l of
-      ('#':_)          -> return id            -- comment
-      "@exclude"       -> put Exclude >> return id
-      "@header"        -> put Header >> return id
-      "@rename"        -> put Rename >> return id
-      "@exclude-class" -> put ExcludeClass >> return id
-      ""               -> return id
-      ('~':_)          -> put None >> return id
-      n -> do
-        v <- get
-        return $ case v of
-          Exclude      -> modExcludepatterns (n:)
-          Header       -> modIncludefiles (n:)
-          Rename       -> addRenamedTypes n
-          ExcludeClass -> modExcludeclasses (n:)
-          None         -> id
+handleOptionsLine = 
+  processor None
+           [(Exclude,      \n -> modExcludepatterns (n:)),
+            (Header,       \n -> modIncludefiles (n:)),
+            (Rename,       \n -> addRenamedTypes n),
+            (ExcludeClass, \n -> modExcludeclasses (n:))]
+           [("@exclude", Exclude),
+            ("@header", Header),
+            ("@rename", Rename),
+            ("@exclude-class", ExcludeClass)]
 
 data InterfaceState = None | Exclude | ExcludeClass | Header | Rename
+  deriving (Eq)
 
 handleParses :: FilePath -> [FilePath] -> [String] -> [String] -> Maybe [String] -> [(String, String)] -> [(FilePath, [Object])] -> IO ()
 handleParses outdir incfiles excls exclclasses exclbases rens objs = do
