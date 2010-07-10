@@ -40,27 +40,21 @@ main = do
   exitWith ExitSuccess
 
 data InterfaceState = None | Exclude | DefaultIn | DefaultOut | InParam | OutParam
+  deriving (Eq)
 
 handleOptionsLine :: String -> State InterfaceState (Options -> Options)
-handleOptionsLine l = do
-    case l of
-      ('#':_)          -> return id            -- comment
-      "@exclude"       -> put Exclude >> return id
-      "@default-in"    -> put DefaultIn >> return id
-      "@default-out"   -> put DefaultOut >> return id
-      "@in-param"      -> put InParam >> return id
-      "@out-param"     -> put OutParam >> return id
-      ""               -> return id
-      ('~':_)          -> put None >> return id
-      n -> do
-        v <- get
-        return $ case v of
-          Exclude      -> modExcludepatterns (n:)
-          DefaultIn    -> modDefaultins (n:)
-          DefaultOut   -> modDefaultouts (n:)
-          InParam      -> modInparameters (n:)
-          OutParam     -> modOutparameters (n:)
-          None         -> id
+handleOptionsLine = 
+  processor None 
+            [(Exclude,    \n -> modExcludepatterns (n:))
+            ,(DefaultIn,  \n -> modDefaultins (n:))
+            ,(DefaultOut, \n -> modDefaultouts (n:))
+            ,(InParam,    \n -> modInparameters (n:))
+            ,(OutParam,   \n -> modOutparameters (n:))]
+            [("@exclude",     Exclude)
+            ,("@default-in",  DefaultIn)
+            ,("@default-out", DefaultOut)
+            ,("@in-param",    InParam)
+            ,("@out-param",   OutParam)]
 
 handleHaskell :: Options -> [FilePath] -> IO ()
 handleHaskell opts filenames = do
