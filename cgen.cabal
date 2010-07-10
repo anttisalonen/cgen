@@ -53,3 +53,19 @@ Executable cgen-hs
                        -fno-warn-unused-binds
                        -fno-warn-unused-do-bind
 
+Executable grgen
+  Main-is:             GrGen.hs
+  Hs-Source-Dirs:      src
+  Build-depends:       base > 3 && < 5,
+                       parsec>=3.1.0,
+                       containers>=0.3.0.0,
+                       mtl>=1.1.0.0,
+                       filepath>=1.1.0.0,
+                       directory>=1.0.0.0,
+                       safe>=0.2,
+                       regex-posix>=0.91,
+                       template-haskell
+  Ghc-options:         -Wall -fno-warn-missing-signatures
+                       -fno-warn-unused-binds
+                       -fno-warn-unused-do-bind
+
