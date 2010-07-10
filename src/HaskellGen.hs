@@ -8,6 +8,7 @@ import Text.Printf
 import System.IO
 import System.FilePath
 import Control.Monad
+import Control.Applicative
 import qualified Data.Set as S
 
 import Text.Regex.Posix
@@ -87,15 +88,16 @@ haskellGen opts objs = do
 
     forM_ funs $ \(file, filefuns) ->
         withFile (outdir </> ((takeBaseName file) ++ ".hs")) WriteMode $ \h -> do
-            hPrintf h "{-# LANGUAGE ForeignFunctionInterface #-}\n"
-            hPrintf h "module %s\nwhere\n\nimport Types\nimport Control.Monad\n\n" (takeBaseName file)
-            hPutStrLn h importForeign
-            forM_ filefuns $ \fun -> do
+            allgenfuns <- catMaybes <$> (forM filefuns $ \fun -> do
                 let inparams = map (removeNamespace . stripConst . correctType) $ map vartype (params fun)
                     retparam = removeNamespace . stripConst . correctType $ rettype fun
                 case cfunToHsFun opts file fun of
-                  Right hsf -> addFun h hsf
-                  Left  err -> hPrintf stderr "Function %s discarded:\n\t%s\n" (getObjName fun) err
+                  Right hsf -> return $ Just hsf
+                  Left  err -> hPrintf stderr "Function %s discarded:\n\t%s\n" (getObjName fun) err >> return Nothing)
+            hPrintf h "{-# LANGUAGE ForeignFunctionInterface #-}\n"
+            hPrintf h "module %s(\n%s\n)\n\nwhere\n\nimport Types\nimport Control.Monad\n\n" (takeBaseName file) (intercalate ", \n" $ map hsfunname allgenfuns)
+            hPutStrLn h importForeign
+            forM_ allgenfuns $ \f -> addFun h f
 
 -- creates the HsFun.
 cfunToHsFun :: Options -> FilePath -> Object -> Either String HsFun
