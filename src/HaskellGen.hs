@@ -109,20 +109,6 @@ haskellGen opts objs = do
                     forM_ inheritances $ \i -> do
                          hPrintf h "instance C%s %s where\n  to%s (%s p) = %s (castPtr p)\n\n" cname i cname i cname
 
-{-
-            let inheritmap = M.fromList inheritdata
-            forM_ (S.toList cpptypes) $ \t -> do
-                case M.lookup t inheritmap of
-                  Nothing       -> return ()
-                  Just inherits -> do
-                    let instances = catMaybes $ for inherits $ \i -> 
-                          if i `S.member` cpptypes then Just i else Nothing
-                    when (not . null $ instances) $ do
-                        hPrintf h "class C%s a where\n  to%s :: a -> %s\n\n" t t t
-                        forM_ instances $ \i -> do
-                             hPrintf h "instance C%s %s where\n  to%s (%s p) = %s (castPtr p)\n\n" t i t i t
--}
-
     forM_ funs $ \(file, filefuns) ->
         withFile (outdir </> ((takeBaseName file) ++ ".hs")) WriteMode $ \h -> do
             allgenfuns <- catMaybes <$> (forM filefuns $ \fun -> do
