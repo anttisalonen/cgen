@@ -25,6 +25,7 @@ data Options = Options
     outputdir         :: FilePath
   , interfacefile     :: String
   , inheritfile       :: FilePath
+  , umbrellamodule    :: FilePath
   , excludepatterns   :: [String] 
   , defaultins        :: [String] 
   , defaultouts       :: [String] 
@@ -79,6 +80,8 @@ haskellGen opts objs = do
     let hstypes = nub . map hstypify $ filter (\t -> not . isStdType $ stripPtr t) (S.toList cpptypes)
         typefile = outdir </> "Types.hs"
         hstypify = capitalize . stripPtr . removeNamespace
+
+    -- Types module
     withFile typefile WriteMode $ \h -> do
         hPrintf h "module Types\nwhere\n\n"
         hPutStrLn h importForeign
@@ -87,6 +90,7 @@ haskellGen opts objs = do
             hPrintf h "newtype %s = %s (Ptr %s) -- nullary data type\n" t t t
         hPrintf h "\n"
 
+        -- classes and instances
         when (not . null $ inheritfile opts) $ do
             inheritdata <- withFile (inheritfile opts) ReadMode $ \ih -> do
                 conts <- hGetContents ih
@@ -109,7 +113,7 @@ haskellGen opts objs = do
                     forM_ inheritances $ \i -> do
                          hPrintf h "instance C%s %s where\n  to%s (%s p) = %s (castPtr p)\n\n" cname i cname i cname
 
-    forM_ funs $ \(file, filefuns) ->
+    allfuns <- forM funs $ \(file, filefuns) ->
         withFile (outdir </> ((takeBaseName file) ++ ".hs")) WriteMode $ \h -> do
             allgenfuns <- catMaybes <$> (forM filefuns $ \fun -> do
                 let inparams = map (removeNamespace . stripConst . correctType) $ map vartype (params fun)
@@ -121,6 +125,14 @@ haskellGen opts objs = do
             hPrintf h "module %s(\n%s\n)\n\nwhere\n\nimport Types\nimport Control.Monad\n\n" (takeBaseName file) (intercalate ", \n" $ map hsfunname allgenfuns)
             hPutStrLn h importForeign
             forM_ allgenfuns $ \f -> addFun h f
+            return allgenfuns
+
+    when (not . null $ umbrellamodule opts) $ do
+        withFile (outdir </> (umbrellamodule opts)) WriteMode $ \h -> do
+            hPrintf h "module %s(\n  %s\n)\n\nwhere\n\n%s\n" 
+                      (takeBaseName $ umbrellamodule opts)
+                      (intercalate ", \n  " (map hsfunname (concat allfuns)))
+                      (intercalate "\n" $ map ("import " ++) (map (takeBaseName . fst) funs))
 
 -- creates the HsFun.
 cfunToHsFun :: Options -> FilePath -> Object -> Either String HsFun
