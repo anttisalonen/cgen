@@ -131,4 +131,7 @@ getClname :: Object -> String
 getClname (FunDecl _ _ _ _ (Just (_, n)) _ _) = n
 getClname _                                 = ""
 
+isEmptyClass :: Object -> Bool
+isEmptyClass (ClassDecl _ _ _ _ objs) = null objs
+isEmptyClass _                        = False
 
