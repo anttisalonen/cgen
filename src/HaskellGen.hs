@@ -10,8 +10,10 @@ import System.FilePath
 import Control.Monad
 import Control.Applicative
 import qualified Data.Set as S
+import qualified Data.Map as M
 
 import Text.Regex.Posix
+import Safe
 
 import HeaderData
 import CppUtils
@@ -22,6 +24,7 @@ data Options = Options
   {
     outputdir         :: FilePath
   , interfacefile     :: String
+  , inheritfile       :: FilePath
   , excludepatterns   :: [String] 
   , defaultins        :: [String] 
   , defaultouts       :: [String] 
@@ -65,26 +68,60 @@ haskellGen :: Options -> [(FilePath, [Object])] -> IO ()
 haskellGen opts objs = do
     let outdir   = outputdir opts
         excls    = excludepatterns opts
-        dins     = defaultins opts ++ ctypes
-        douts    = defaultouts opts
         funs     = map (apSnd (filter (\f -> not $ or (map (\e -> funname f =~ e) excls)))) $ map (apSnd getFuns) objs
         alltypes = getAllTypesWithPtr (concatMap snd funs)
         typeValid :: String -> Bool
         typeValid t = not . isJust $ typeValidMsg opts t
         (cpptypes, rejtypes) = S.partition typeValid alltypes
-        ctypes = map removeNamespace (S.toList cpptypes)
     hPutStrLn stderr $ "Rejected types: "
     forM_ (S.toList rejtypes) print
     hPutStrLn stderr $ "Used types: "
-    forM_ ctypes print
-    let hstypes = nub . map capitalize $ filter (not . isStdType) $ map stripPtr ctypes
+    let hstypes = nub . map hstypify $ filter (\t -> not . isStdType $ stripPtr t) (S.toList cpptypes)
         typefile = outdir </> "Types.hs"
+        hstypify = capitalize . stripPtr . removeNamespace
     withFile typefile WriteMode $ \h -> do
         hPrintf h "module Types\nwhere\n\n"
         hPutStrLn h importForeign
         hPrintf h "type CBool = CChar -- correct?\n\n"
         forM_ hstypes $ \t -> do
             hPrintf h "newtype %s = %s (Ptr %s) -- nullary data type\n" t t t
+        hPrintf h "\n"
+
+        when (not . null $ inheritfile opts) $ do
+            inheritdata <- withFile (inheritfile opts) ReadMode $ \ih -> do
+                conts <- hGetContents ih
+                forM (lines conts) $ \l -> do
+                    let (cname, inheritline) = break (== '|') l
+                        inherits = map (dropWhile (== ',')) $ groupBy (\_ b -> b /= ',') $ tailSafe inheritline
+                    return (cname, inherits)
+
+            let hstypeset = S.fromList hstypes
+                inheritlist :: [(String, [String])]
+                inheritlist = M.toList . foldr (\(k, a) acc -> M.insertWith (++) k [a] acc) M.empty . map swap . expand . catMaybes $ 
+                  for inheritdata $ \(cname, superclasses) ->
+                      if hstypify cname `S.member` hstypeset 
+                         then Just (hstypify cname, catMaybes $ for superclasses $ \s ->
+                                     if (s `S.member` hstypeset) then Just (hstypify s) else Nothing)
+                         else Nothing
+            forM_ inheritlist $ \(cname, inheritances) -> do
+                when (cname `S.member` hstypeset && not (null inheritances)) $ do
+                    hPrintf h "class C%s a where\n  to%s :: a -> %s\n\n" cname cname cname
+                    forM_ inheritances $ \i -> do
+                         hPrintf h "instance C%s %s where\n  to%s (%s p) = %s (castPtr p)\n\n" cname i cname i cname
+
+{-
+            let inheritmap = M.fromList inheritdata
+            forM_ (S.toList cpptypes) $ \t -> do
+                case M.lookup t inheritmap of
+                  Nothing       -> return ()
+                  Just inherits -> do
+                    let instances = catMaybes $ for inherits $ \i -> 
+                          if i `S.member` cpptypes then Just i else Nothing
+                    when (not . null $ instances) $ do
+                        hPrintf h "class C%s a where\n  to%s :: a -> %s\n\n" t t t
+                        forM_ instances $ \i -> do
+                             hPrintf h "instance C%s %s where\n  to%s (%s p) = %s (castPtr p)\n\n" t i t i t
+-}
 
     forM_ funs $ \(file, filefuns) ->
         withFile (outdir </> ((takeBaseName file) ++ ".hs")) WriteMode $ \h -> do

@@ -16,12 +16,13 @@ import HaskellGen
 import Options
 
 defaultOptions :: Options
-defaultOptions = Options "" "" [] [] [] [] []
+defaultOptions = Options "" "" "" [] [] [] [] []
 
 options :: [OptDescr (Options -> Options)]
 options = [
     Option ['o'] ["output"]        (ReqArg (setOutputdir) "directory")                   "output directory for the Haskell files"
   , Option []    ["interface"]     (ReqArg (setInterfacefile) "file")                    "define input interface file for Haskell"
+  , Option []    ["inherit"]       (ReqArg (setInheritfile)   "file")                    "define class inheritance file"
   , Option []    ["exclude"]       (ReqArg (\l -> modExcludepatterns (l:)) "expression") "exclude pattern for function names"
   ]
 
@@ -69,5 +70,4 @@ handleHaskell opts filenames = do
       []             -> do
           createDirectoryIfMissing True (outputdir opts)
           haskellGen opts $ zip (map takeFileName filenames) genpress
-          exitWith ExitSuccess
 
