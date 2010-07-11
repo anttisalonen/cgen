@@ -83,5 +83,5 @@ createGraphFile excls objs =
           then printf "%s|%s\n" cname (intercalate "," (map inheritname inhs))
           else ""
       mkline _ = ""
-  in concatMap mkline (getClasses objs)
+  in concatMap mkline $ filter (not . isEmptyClass) $ getClasses objs
 
