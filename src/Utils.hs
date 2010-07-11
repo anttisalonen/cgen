@@ -48,4 +48,13 @@ getSuffixBy c = fst . foldr go ("", True)
 apSnd :: (b -> c) -> (a, b) -> (a, c)
 apSnd fun (a, b) = (a, fun b)
 
+for :: [a] -> (a -> b) -> [b]
+for = flip map
+
+swap :: (a, b) -> (b, a)
+swap (a, b) = (b, a)
+
+expand :: [(a, [b])] -> [(a, b)]
+expand = concat . foldr go []
+  where go (a, bs) acc = zip (repeat a) bs : acc
 
