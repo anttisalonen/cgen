@@ -66,10 +66,7 @@ handleHeader outdir incfiles exclclasses excls rens headername objs = do
         -- hPrintf h "#endif\n"
         hPrintf h "\n"
         forM_ funs $ \fun -> do
-            hPrintf h "%s %s(%s);\n" 
-                (rettype fun) 
-                (funname fun) 
-                (paramFormat (params fun))
+            hPutStrLn h $ funDeclaration (funname fun) (rettype fun) (paramFormat (params fun))
         hPrintf h "\n"
         hPrintf h "}\n"
         hPrintf h "\n"
@@ -83,7 +80,7 @@ handleHeader outdir incfiles exclclasses excls rens headername objs = do
         hPrintf h "\n"
         forM_ (zip funs allfuns) $ \(fun, origfun) -> do
             hPrintf h "%s %s(%s)\n" 
-                (rettype fun)
+                (stripStatic $ rettype fun)
                 (funname fun)
                 (paramFormat (params fun))
             hPrintf h "{\n"
@@ -93,11 +90,9 @@ handleHeader outdir incfiles exclclasses excls rens headername objs = do
             -- is lost.
             let prs = intercalate ", " $ map (correctRef . renameParam rens) $ params $ correctFuncParams origfun
             switch (funname origfun)
-              [(getClname origfun,      hPrintf h "    return new %s(%s);\n" (stripExtra $ rettype fun) prs),
+              [(getClname origfun,      hPrintf h "    return new %s(%s);\n" (stripStatic $ stripExtra $ rettype fun) prs),
                ('~':getClname origfun,  hPrintf h "    delete this_ptr;\n")]
-              (if rettype fun == "void" 
-                 then hPrintf h "    this_ptr->%s(%s);\n" (funname origfun) prs
-                 else hPrintf h "    return this_ptr->%s(%s);\n" (funname origfun) prs)
+              (hPutStrLn h $ funDefinition (funname origfun) (rettype fun) (getClname origfun) prs)
             hPrintf h "}\n"
             hPrintf h "\n"
         hPutStrLn stderr $ "Wrote file " ++ cppoutfile
@@ -138,6 +133,21 @@ handleHeader outdir incfiles exclclasses excls rens headername objs = do
                       extendFunc $ f -- constructor & destructor handling
         usedtypes  = getAllTypes funs
 
+funDefinition :: String -> String -> String -> String -> String
+funDefinition fnname rttype clname fnparams
+  | rttype == "void" 
+      = printf "    this_ptr->%s(%s);" fnname fnparams
+  | isStatic rttype && stripStatic rttype == "void" 
+      = printf "    %s::%s(%s);" clname fnname fnparams
+  | isStatic rttype 
+      = printf "    return %s::%s(%s);" clname fnname fnparams
+  | otherwise 
+      = printf "    return this_ptr->%s(%s);" fnname fnparams
+
+funDeclaration :: String -> String -> String -> String
+funDeclaration fnname rttype fnparams =
+    printf "%s %s(%s);" (stripStatic rttype) fnname fnparams
+
 refParamsToPointers f@(FunDecl _ _ ps _ _ _ _) =
   f{params = map refToPointerParam ps}
 refParamsToPointers n = n
@@ -155,14 +165,16 @@ renameParam rens p@(ParamDecl _ pt _ _) =
 renameType :: [(String, String)] -> String -> String
 renameType rens t =
   let mnt = lookup tm rens
-      tm = stripExtra t
+      tm = stripStatic $ stripExtra t
       mf1 = if isConst t then makeConst else id
       mf2 = makePtr (isPtr t)
   in case mnt of
        Nothing -> if '<' `elem` t && '>' `elem` t
                     then handleTemplateTypes rens t
                     else t
-       Just t' -> (mf1 . mf2) t'
+       Just t' -> if isStatic (stripExtra t)
+                    then "static " ++ ((mf1 . mf2) t')
+                    else (mf1 . mf2) t'
 
 handleTemplateTypes :: [(String, String)] -> String -> String
 handleTemplateTypes rens t = 
@@ -226,15 +238,18 @@ addParamClassQual enums classes p@(ParamDecl _ t _ _) =
 -- the qualification added is the class nesting of the found class.
 addClassQual :: [Object] -> [Object] -> String -> String
 addClassQual enums classes rt =
-  case fetchClass classes (stripExtra rt) of
-    Nothing -> case fetchEnum enums (stripExtra rt) of
+  case fetchClass classes (stripStatic $ stripExtra rt) of
+    Nothing -> case fetchEnum enums (stripStatic $ stripExtra rt) of
                  Nothing -> rt
                  Just e  -> addNamespaceQual (map snd $ enumclassnesting e) rt
     Just c  -> addNamespaceQual (map snd $ classnesting c) rt
 
 -- addNamespaceQual ["aa", "bb"] "foo" = "bb::aa::foo"
+-- addNamespaceQual ["aa", "bb"] "static foo" = "static bb::aa::foo"
 addNamespaceQual :: [String] -> String -> String
-addNamespaceQual ns n = concatMap (++ "::") ns ++ n
+addNamespaceQual ns n
+  | isStatic n = "static " ++ addNamespaceQual ns (stripStatic n)
+  | otherwise  = concatMap (++ "::") ns ++ n
 
 -- turn a "char& param" into "*param".
 correctRef :: ParamDecl -> String
@@ -245,7 +260,7 @@ correctRef (ParamDecl nm pt _ _) =
 
 -- separate pointer * from other chars for all params.
 -- if param has no name, create one.
--- remove keywords such as virtual, static, etc.
+-- remove keywords such as virtual, etc.
 correctFuncParams :: Object -> Object
 correctFuncParams f@(FunDecl _ _ ps _ _ _ _) = 
   f{params = checkParamNames (map (correctParam) ps)}
@@ -258,7 +273,7 @@ checkParamNames = go (1 :: Int)
   where go _ []     = []
         go n (p:ps) =
           let (p', n') = case varname p of
-                           "" -> (p{varname = (stripExtra $ vartype p) ++ (show n)}, n + 1)
+                           "" -> (p{varname = (stripStatic $ stripExtra $ vartype p) ++ (show n)}, n + 1)
                            _  -> (p, n)
           in p':(go n' ps)
 
@@ -277,8 +292,9 @@ constructorName = "new"
 destructorName = "delete"
 
 addThisPointer :: Object -> Object
-addThisPointer f@(FunDecl fname _ ps _ (Just (_, clname)) _ _)
+addThisPointer f@(FunDecl fname rttype ps _ (Just (_, clname)) _ _)
   | fname == constructorName = f
+  | isStatic rttype          = f
   | otherwise
     = f{params = (t:ps)}
       where t = ParamDecl this_ptrName (clname ++ "*") Nothing Nothing
@@ -319,13 +335,14 @@ usedTypedefs :: S.Set String -> [(String, String)] -> [(String, String)]
 usedTypedefs s = filter (\(_, t2) -> t2 `S.member` s)
 
 -- separate pointer * from other chars in function return type.
--- remove keywords such as virtual, static, etc.
+-- remove keywords such as virtual, etc.
 correctFuncRetType :: Object -> Object
 correctFuncRetType f@(FunDecl _ fr _ _ _ _ _)
   = f{rettype = correctType fr}
 correctFuncRetType n = n
 
 -- o(n^2).
+-- simply adds a number at the end of the overloaded function name.
 mangle :: [Object] -> [Object]
 mangle []     = []
 mangle (n:ns) = 

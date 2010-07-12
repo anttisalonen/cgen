@@ -10,7 +10,6 @@ import Utils
 
 isType :: String -> Bool
 isType "virtual" = False
-isType "static"  = False
 isType "enum"    = False
 isType "mutable" = False
 isType "struct"  = False
@@ -38,8 +37,15 @@ correctType t =
        []  -> ""
        ms  -> combChar "*&" $ intercalate " " $ filter isType ms
 
+isStatic :: String -> Bool
+isStatic n = take 7 n == "static "
+
 isConst :: String -> Bool
 isConst n = take 6 n == "const "
+
+stripStatic :: String -> String
+stripStatic n | isStatic n = drop 7 n
+              | otherwise  = n
 
 stripExtra :: String -> String
 stripExtra = stripConst . stripRef . stripPtr
