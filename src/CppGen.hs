@@ -113,6 +113,7 @@ handleHeader outdir incfiles exclclasses excls rens headername objs = do
         classnames = filter (not . null) $ nub $ map getObjName $ getClasses objs
         classes    = concatMap (\nm -> filter (classHasName nm) (getClasses objs)) classnames
         alltypedefs = catMaybes $ map getTypedef (map snd $ concatMap classobjects classes)
+        -- typedefs used in function parameter and return types
         usedtypedefs = usedTypedefs usedtypes alltypedefs
         extratypedefs = extraTypedefs usedtypedefs alltypedefs
         -- NOTE: can't just use only public typedefs, because they sometimes depend on 
@@ -190,9 +191,17 @@ typesInType v =
       "" -> [stripExtra v]
       n  -> map stripExtra $ splitBy ',' n
 
+-- all typedefs whose definition depends on another typedef.
 extraTypedefs :: [(String, String)] -> [(String, String)] -> [(String, String)]
-extraTypedefs ts = filter (extractSecType ts)
+extraTypedefs usedts allts = 
+  case filter (extractSecType usedts) allts of
+    []        -> []
+                 -- NOTE: the order here is significant for the dependencies
+                 -- between the typedefs.
+    newusedts -> extraTypedefs newusedts allts ++ newusedts
 
+-- whether any of the types in the snd of the tuple is contained in
+-- any of the fsts of the list.
 extractSecType :: [(String, String)] -> (String, String) -> Bool
 extractSecType ts (_, t2) = 
   let sectypes = typesInType t2
