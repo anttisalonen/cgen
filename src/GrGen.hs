@@ -48,7 +48,7 @@ main = do
     exitWith (ExitFailure 1)
   let prevopts = foldl' (flip ($)) defaultOptions actions
   opts <- handleInterfaceFile (interfacefile prevopts) None handleOptionsLine prevopts
-  contents <- mapM readFile rest
+  contents <- mapM readFile (nub rest)
   let parses = map parseHeader contents
       (perrs, press) = partitionEithers parses
   case perrs of
