@@ -188,15 +188,19 @@ clconts cs ns n inherits lev = do
 clcontents :: CharParser HeaderState [(InheritLevel, Object)]
 clcontents = do
   spaces
-  many $ do
+  objs <- many $ do
     spaces
-    optional (many1 (try setinheritlevel <|> try frienddecl))
-    obj <- try specialClassFunction <|> oneobj
-    vis <- getVisibility <$> getState
-    let vn = case vis of
-               Nothing     -> Public
-               Just (v, _) -> v
-    return (vn, obj)
+    mparse <- optionMaybe (many1 (try setinheritlevel <|> try frienddecl))
+    case mparse of
+      Just _  -> return Nothing -- ignore friend declarations
+      Nothing -> do
+        obj <- try specialClassFunction <|> oneobj
+        vis <- getVisibility <$> getState
+        let vn = case vis of
+                   Nothing     -> Public
+                   Just (v, _) -> v
+        return $ Just (vn, obj)
+  return $ catMaybes objs
 
 -- constructor or destructor.
 specialClassFunction = do
