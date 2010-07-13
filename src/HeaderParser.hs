@@ -433,7 +433,6 @@ macroDef = do
     spaces
     mname <- identifier
     mval <- option "" (many1 (oneOf " \t") >> untilEOL)
-    _ <- char '\n'
     updateState (M.insert mname mval)
     return ""
 
