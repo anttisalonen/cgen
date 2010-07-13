@@ -100,7 +100,6 @@ handleHeader outdir incfiles exclclasses excls rens headername objs = do
   where outfile    = (outdir </> headername)
         cppoutfile = (outdir </> takeBaseName headername <.> "cpp")
         allfuns    = filter (\f -> publicMemberFunction f && 
-                                   not (abstract f) && 
                                    not (excludeFun f) && 
                                    not (abstractConstructor classes f)) (getFuns objs)
         namespaces = filter (not . null) $ nub $ map (headDef "") (map fnnamespace funs)
