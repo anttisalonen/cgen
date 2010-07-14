@@ -5,6 +5,8 @@ where
 import System.Environment
 import System.Exit
 import System.Console.GetOpt
+import System.Directory
+import System.FilePath
 import Data.Either
 import Data.List
 import Control.Monad
@@ -23,18 +25,20 @@ data Options = Options
     outputfile        :: FilePath
   , interfacefile     :: String
   , excludepatterns   :: [String] 
+  , includedir        :: FilePath
   }
   deriving (Show)
 $(deriveMods ''Options)
 
 defaultOptions :: Options
-defaultOptions = Options "" "" []
+defaultOptions = Options "" "" [] ""
 
 options :: [OptDescr (Options -> Options)]
 options = [
     Option ['o'] ["output"]        (ReqArg (setOutputfile) "file")                       "output file for the graph"
   , Option []    ["interface"]     (ReqArg (setInterfacefile) "file")                    "define input interface file"
   , Option []    ["exclude"]       (ReqArg (\l -> modExcludepatterns (l:)) "expression") "exclude pattern for class names"
+  , Option ['I'] ["include"]       (ReqArg (setIncludedir) "Directory")                  "include path for the header files"
   ]
 
 main :: IO ()
@@ -48,7 +52,7 @@ main = do
     exitWith (ExitFailure 1)
   let prevopts = foldl' (flip ($)) defaultOptions actions
   opts <- handleInterfaceFile (interfacefile prevopts) None handleOptionsLine prevopts
-  contents <- mapM readFile (nub rest)
+  contents <- mapM readFile (map (if null (includedir opts) then id else (includedir opts </>)) (nub rest))
   let parses = map parseHeader contents
       (perrs, press) = partitionEithers parses
   case perrs of
@@ -72,7 +76,8 @@ data InterfaceState = None | Exclude
   deriving (Eq)
 
 handleParses :: FilePath -> [String] -> [Object] -> IO ()
-handleParses outfile excls objs =
+handleParses outfile excls objs = do
+    createDirectoryIfMissing True (dropFileName outfile)
     writeFile outfile $ createGraphFile excls objs
 
 createGraphFile :: [String] -> [Object] -> String
