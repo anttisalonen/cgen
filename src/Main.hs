@@ -29,6 +29,7 @@ data Options = Options
     outputdir         :: FilePath
   , inputfiles        :: [FilePath]
   , includefiles      :: [FilePath]
+  , includedir        :: FilePath
   , excludepatterns   :: [String] 
   , excludebases      :: [String]
   , checksuperclasses :: Bool
@@ -42,7 +43,7 @@ data Options = Options
 $(deriveMods ''Options)
 
 defaultOptions :: Options
-defaultOptions = Options "" [] [] [] [] False [] [] "" Nothing False
+defaultOptions = Options "" [] [] "" [] [] False [] [] "" Nothing False
 
 options :: [OptDescr (Options -> Options)]
 options = [
@@ -55,6 +56,7 @@ options = [
   , Option []    ["rename"]        (ReqArg (addRenamedTypes) "oldtype|newtype")         "rename a type by another one"
   , Option []    ["interface"]     (ReqArg (setInterfacefile) "file")                   "define input interface file"
   , Option []    ["dump"]          (NoArg  (setDumpmode True))                          "simply dump the parsed data of the header"
+  , Option ['I'] ["include"]       (ReqArg (setIncludedir) "Directory")                 "include path for the header files"
   ]
 
 addRenamedTypes :: String -> Options -> Options
@@ -74,7 +76,7 @@ main = do
     exitWith (ExitFailure 1)
   let prevopts = foldl' (flip ($)) defaultOptions actions
   opts <- handleInterfaceFile (interfacefile prevopts) None handleOptionsLine prevopts
-  contents <- mapM readFile rest
+  contents <- mapM readFile (map (if null (includedir opts) then id else (includedir opts </>)) rest)
   let parses = map parseHeader contents
       (perrs, press) = partitionEithers parses
   case perrs of
