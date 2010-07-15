@@ -31,9 +31,13 @@ data Options = Options
   , defaultouts       :: [String] 
   , inparameters      :: [String] 
   , outparameters     :: [String] 
+  , hierarchy         :: String
   }
   deriving (Show)
 $(deriveMods ''Options)
+
+defaultOptions :: Options
+defaultOptions = Options "" "" "" "" [] [] [] [] [] ""
 
 -- haskell c type descriptor, e.g. "Ptr CChar"
 data HsCType = HsCType {
@@ -74,6 +78,7 @@ haskellGen opts objs = do
         typeValid :: String -> Bool
         typeValid t = not . isJust $ typeValidMsg opts t
         (cpptypes, rejtypes) = S.partition typeValid alltypes
+        modprefix = hierarchy opts
     hPutStrLn stderr $ "Rejected types: "
     forM_ (S.toList rejtypes) print
     hPutStrLn stderr $ "Used types: "
@@ -83,7 +88,7 @@ haskellGen opts objs = do
 
     -- Types module
     withFile typefile WriteMode $ \h -> do
-        hPrintf h "module Types\nwhere\n\n"
+        hPrintf h "module %sTypes\nwhere\n\n" modprefix
         hPutStrLn h importForeign
         hPrintf h "type CBool = CChar -- correct?\n\n"
         forM_ hstypes $ \t -> do
@@ -122,17 +127,22 @@ haskellGen opts objs = do
                   Right hsf -> return $ Just hsf
                   Left  err -> hPrintf stderr "Function %s discarded:\n\t%s\n" (getObjName fun) err >> return Nothing)
             hPrintf h "{-# LANGUAGE ForeignFunctionInterface #-}\n"
-            hPrintf h "module %s(\n%s\n)\n\nwhere\n\nimport Types\nimport Control.Monad\n\n" (takeBaseName file) (intercalate ", \n" $ map hsfunname allgenfuns)
+            hPrintf h "module %s%s(\n%s\n)\n\nwhere\n\nimport %sTypes\nimport Control.Monad\n\n" 
+                      modprefix 
+                      (takeBaseName file) 
+                      (intercalate ", \n" $ map hsfunname allgenfuns)
+                      modprefix
             hPutStrLn h importForeign
             forM_ allgenfuns $ \f -> addFun h f
             return allgenfuns
 
     when (not . null $ umbrellamodule opts) $ do
         withFile (outdir </> (umbrellamodule opts)) WriteMode $ \h -> do
-            hPrintf h "module %s(\n  %s\n)\n\nwhere\n\n%s\n" 
+            hPrintf h "module %s%s(\n  %s\n)\n\nwhere\n\n%s\n" 
+                      modprefix
                       (takeBaseName $ umbrellamodule opts)
                       (intercalate ", \n  " (map hsfunname (concat allfuns)))
-                      (intercalate "\n" $ map ("import " ++) (map (takeBaseName . fst) funs))
+                      (intercalate "\n" $ map (("import " ++ modprefix) ++) (map (takeBaseName . fst) funs))
 
 -- creates the HsFun.
 cfunToHsFun :: Options -> FilePath -> Object -> Either String HsFun
