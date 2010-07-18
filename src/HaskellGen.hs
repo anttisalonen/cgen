@@ -68,21 +68,24 @@ data HsFun = HsFun {
      --   which haskell type to convert to),
      -- ^ how to convert the c return types to a haskell type)
   }
+  deriving (Show)
 
 haskellGen :: Options -> [(FilePath, [Object])] -> IO ()
 haskellGen opts objs = do
     let outdir   = outputdir opts
         excls    = excludepatterns opts
         funs     = map (apSnd (filter (\f -> not $ or (map (\e -> funname f =~ e) excls)))) $ map (apSnd getFuns) objs
+        enums    = concatMap getEnums $ map snd objs
+        enumnames = map (capitalize . enumname) enums
         alltypes = getAllTypesWithPtr (concatMap snd funs)
         typeValid :: String -> Bool
-        typeValid t = not . isJust $ typeValidMsg opts t
+        typeValid t = not . isJust $ typeValidMsg enumnames opts t
         (cpptypes, rejtypes) = S.partition typeValid alltypes
         modprefix = hierarchy opts
     hPutStrLn stderr $ "Rejected types: "
     forM_ (S.toList rejtypes) print
     hPutStrLn stderr $ "Used types: "
-    let hstypes = nub . map hstypify $ filter (\t -> not . isStdType $ stripPtr t) (S.toList cpptypes)
+    let hstypes = nub $ filter (not . isStdType . stripPtr) (S.toList cpptypes)
         typefile = outdir </> "Types.hs"
         hstypify = capitalize . stripPtr . removeNamespace
 
@@ -92,7 +95,22 @@ haskellGen opts objs = do
         hPutStrLn h importForeign
         hPrintf h "type CBool = CChar -- correct?\n\n"
         forM_ hstypes $ \t -> do
-            hPrintf h "newtype %s = %s (Ptr %s) -- nullary data type\n" t t t
+            case (filter (\e -> enumname e == (capitalize . stripPtr . stripNamespace) t)) enums of
+              ((EnumDef en vs _):_) -> do
+                let hstypename = hstypify en
+                    decaptn    = decapitalize hstypename
+                    constrs    = map (apFst hstypify) $ getEnumValues vs
+                hPrintf h "\ndata %s = %s\n\n" hstypename (intercalate " | " (map fst constrs))
+                hPrintf h "%sToCInt :: %s -> CInt\n" decaptn hstypename
+                forM_ constrs $ \(c, v) -> do
+                    hPrintf h "%sToCInt %s = %d\n" decaptn c v
+                hPrintf h "\n"
+                hPrintf h "cintTo%s :: CInt -> %s\n" hstypename hstypename
+                forM_ constrs $ \(c, v) -> do
+                    hPrintf h "cintTo%s %d = %s\n" hstypename v c
+                hPrintf h "cintTo%s n = error \"cintTo%s: can not convert integer \\\" ++ show n ++ \\\" to %s\"\n" hstypename hstypename hstypename
+                hPrintf h "\n"
+              _                     -> let t' = hstypify t in hPrintf h "newtype %s = %s (Ptr %s) -- nullary data type\n" t' t' t'
         hPrintf h "\n"
 
         -- classes and instances
@@ -104,7 +122,7 @@ haskellGen opts objs = do
                         inherits = map (dropWhile (== ',')) $ groupBy (\_ b -> b /= ',') $ tailSafe inheritline
                     return (cname, inherits)
 
-            let hstypeset = S.fromList hstypes
+            let hstypeset = (S.\\) (S.fromList (map hstypify hstypes)) (S.fromList enumnames) 
                 inheritlist :: [(String, [String])]
                 inheritlist = M.toList . foldr (\(k, a) acc -> M.insertWith (++) k [a] acc) M.empty . map swap . expand . catMaybes $ 
                   for inheritdata $ \(cname, superclasses) ->
@@ -121,9 +139,7 @@ haskellGen opts objs = do
     allfuns <- forM funs $ \(file, filefuns) ->
         withFile (outdir </> ((takeBaseName file) ++ ".hs")) WriteMode $ \h -> do
             allgenfuns <- catMaybes <$> (forM filefuns $ \fun -> do
-                let inparams = map (removeNamespace . stripConst . correctType) $ map vartype (params fun)
-                    retparam = removeNamespace . stripConst . correctType $ rettype fun
-                case cfunToHsFun opts file fun of
+                case cfunToHsFun enumnames opts file fun of
                   Right hsf -> return $ Just hsf
                   Left  err -> hPrintf stderr "Function %s discarded:\n\t%s\n" (getObjName fun) err >> return Nothing)
             hPrintf h "{-# LANGUAGE ForeignFunctionInterface #-}\n"
@@ -133,7 +149,7 @@ haskellGen opts objs = do
                       (intercalate ", \n" $ map hsfunname allgenfuns)
                       modprefix
             hPutStrLn h importForeign
-            forM_ allgenfuns $ \f -> addFun h f
+            forM_ allgenfuns $ addFun h
             return allgenfuns
 
     when (not . null $ umbrellamodule opts) $ do
@@ -145,44 +161,50 @@ haskellGen opts objs = do
                       (intercalate "\n" $ map (("import " ++ modprefix) ++) (map (takeBaseName . fst) funs))
 
 -- creates the HsFun.
-cfunToHsFun :: Options -> FilePath -> Object -> Either String HsFun
-cfunToHsFun opts filename (FunDecl fname rt ps _ _ _ _) =
-  case catMaybes (map (typeValidMsg opts) (map (correctType . stripConst) (rt:pts))) of
+cfunToHsFun :: [String] -> Options -> FilePath -> Object -> Either String HsFun
+cfunToHsFun enumnames opts filename (FunDecl fname rt ps _ _ _ _) =
+  case catMaybes (map (typeValidMsg enumnames opts) (map (correctType . stripConst) (rt:pts))) of
     [] -> Right $
         HsFun filename 
               fname 
-              (map cTypeToHsCType pts)
-              (cTypeToHsCType rt) 
+              (map (cTypeToHsCType enumnames) pts)
+              (cTypeToHsCType enumnames rt) 
               (decapitalize $ dropWhile (== '_') $ dropWhile (/= '_') fname)
-              (map cTypeToHsType pts)
-              ([(cTypeToHsType rt, convRevFunc rt)])
+              (map (cTypeToHsType enumnames) pts)
+              ([(cTypeToHsType enumnames rt, convRevFunc enumnames rt)])
     l  -> Left (intercalate "\n" l)
  where pts = map vartype ps
-cfunToHsFun _ _ _ = Left "Given object is not a function"
+cfunToHsFun _ _ _ _ = Left "Given object is not a function"
 
 -- cTypeToHsCType "const char **" = HsCType CChar 2
-cTypeToHsCType :: String -> HsCType
-cTypeToHsCType "void" = HsCType "()" 0
-cTypeToHsCType t      =
-  case cTypeToHs t of
-    Nothing -> HsCType (capitalize . removeNamespace . correctType . stripExtra . stripConst $ t) (isPtr ct - 1)
-    Just t' -> HsCType t' (isPtr ct)
- where ct = correctType . stripConst $ t
+cTypeToHsCType :: [String] -> String -> HsCType
+cTypeToHsCType _     "void" = HsCType "()" 0
+cTypeToHsCType enums t      
+  | (stripNamespace . correctType . stripExtra . stripConst $ t) `elem` enums = HsCType "CInt" 0
+  | otherwise =
+      case cTypeToHs t of
+        Nothing -> HsCType (capitalize . removeNamespace . correctType . stripExtra . stripConst $ t) (isPtr ct - 1)
+        Just t' -> HsCType t' (isPtr ct)
+     where ct = correctType . stripConst $ t
 
 -- showHsCType (CChar, 2) = (Ptr (Ptr CChar))
 showHsCType :: HsCType -> String
 showHsCType h = hsPointerize (numptrs h) (hsname h)
 
 -- cTypeToHsType "const int **" = (CConvFunc "fromIntegral", "Int")
-cTypeToHsType :: String -> (CConv, String)
-cTypeToHsType "void"  = (NoCConv, "()")
-cTypeToHsType t 
+cTypeToHsType :: [String] -> String -> (CConv, String)
+cTypeToHsType _     "void"  = (NoCConv, "()")
+cTypeToHsType enums t 
   | correctType (stripConst t) == "char*"
      = (WithLambda "withCString", "String")
   | otherwise =
-      case join $ fmap cleanCType $ cTypeToHs t of
-        Nothing -> (NoCConv, printHsType t)
-        Just t' -> (convFunc t, t')
+      let entype = stripNamespace . correctType . stripExtra . stripConst $ t
+      in if entype `elem` enums
+           then (CConvFunc (printf "%sToCInt" $ decapitalize entype), entype)
+           else
+             case join $ fmap cleanCType $ cTypeToHs t of
+               Nothing -> (NoCConv, printHsType enums t)
+               Just t' -> (convFunc t, t')
 
 -- creates the Haskell function definition.
 hsFunDefinition :: HsFun -> String
@@ -213,7 +235,7 @@ hsFunDefinition h = printf "%s %s = %s"
       in concatMap mkCString cstrings ++ " " ++ resLift ++ " " ++ funcall ++ " " ++ funparams
 
 -- prints out the haskell function declaration and definition.
--- TODO: use pouts.
+-- TODO: take defined out-params into account.
 addFun :: Handle -> HsFun -> IO ()
 addFun h hsf = do
   -- FFI import
@@ -234,7 +256,7 @@ addFun h hsf = do
   hsFFIFun file fn cfn inparams retparam = printf "foreign import ccall \"%s %s\" %s%s :: %sIO %s" 
                             file fn cPrefix cfn
                             (printHsParams inparams)
-                            (printHsType retparam)
+                            (retparam)
 
   typeSigHsFun :: HsFun -> String
   typeSigHsFun hf = 
@@ -250,16 +272,20 @@ addFun h hsf = do
 -- The type is a standard c type either as a value or
 -- as a pointer with a defined meaning, or
 -- the type is a pointer to a handle, or
+-- the type is a defined enum, or
 -- the type is void.
 --
 -- The meaning (in/out/in+out) of a standard c type is "defined", if
 -- the type is not a pointer, or
 -- the type is a pointer, and the meaning is given. (not yet implemented)
-typeValidMsg :: Options -> String -> Maybe String
-typeValidMsg opts t = validateAll [(t /= "void*", "Void pointer not supported"),
-                    (not (isTemplate t), "Template types not supported"),
-                    ((t == "void" || isStdType t || isPtr t > 0), "type " ++ t ++ " is a value of a non-standard type"),
-                    (hasDir, "direction for the type " ++ t ++ " has not been defined in the interface file")]
+typeValidMsg :: [String] -> Options -> String -> Maybe String
+typeValidMsg enums opts t = validateAll [(t /= "void*", "Void pointer not supported"),
+                               (not (isTemplate t), "Template types not supported"),
+                               ((any (==(stripNamespace t)) enums || 
+                                t == "void" || 
+                                isStdType t || 
+                                isPtr t > 0), "type " ++ t ++ " is a value of a non-standard type"),
+                               (hasDir, "direction for the type " ++ t ++ " has not been defined in the interface file")]
   where validateAll = foldl' validate Nothing
           where validate (Just n) _        = Just n
                 validate Nothing  (f, str) = if not f then Just str else Nothing
@@ -295,27 +321,28 @@ convFunc ptype =
 
 -- in: a c type, like "int"
 -- out: the haskell conversion function for converting to haskell data type
-convRevFunc :: String -> HsConv
-convRevFunc t
+convRevFunc :: [String] -> String -> HsConv
+convRevFunc enums t
   | fromMaybe "" (cTypeToHs t) == "CBool" = HsConv "toBool"
   | otherwise = 
      let ccf = convFunc t
      in case ccf of
           CConvFunc n -> HsConv n
-          _           -> NoHsConv
+          _           -> 
+            let entype = stripNamespace . correctType . stripExtra . stripConst $ t
+            in if entype `elem` enums
+                 then HsConv $ printf "cintTo%s" entype
+                 else NoHsConv
 
 paramList :: Int -> [String]
 paramList n = map ('p':) (map show [1..n])
 
-printParamList :: [String] -> String
-printParamList = intercalate " "
-
 -- printHsType "const char **" = "(Ptr (Ptr CChar))"
-printHsType :: String -> String
-printHsType "void" = "()"
-printHsType t      = 
+printHsType :: [String] -> String -> String
+printHsType _     "void" = "()"
+printHsType enums t      = 
   case cTypeToHs t of
-    Nothing -> hsPointerize (isPtr ct - 1) $ capitalize . removeNamespace . correctType . stripConst $ t
+    Nothing -> hsPointerize (isPtr ct - 1) $ capitalize . fixNamespace enums . correctType . stripConst $ t
     Just t' -> hsPointerize (isPtr ct) t'
  where ct = correctType . stripConst $ t
 
@@ -380,8 +407,14 @@ cleanCType _ = Nothing
 printHsParams :: [String] -> String
 printHsParams [] = ""
 printHsParams types = 
-  intercalate " -> " (map printHsType types) ++ " -> " 
+  intercalate " -> " types ++ " -> " 
 
 removeNamespace :: String -> String
 removeNamespace = map (\c -> if c == ':' then '_' else c)
+
+stripNamespace :: String -> String
+stripNamespace = last . takeWhile (not . null) . iterate (dropWhile (==':') . snd . break (== ':'))
+
+fixNamespace :: [String] -> String -> String
+fixNamespace enums n = (if (stripNamespace n) `elem` enums then stripNamespace else removeNamespace) n
 

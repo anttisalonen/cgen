@@ -50,21 +50,18 @@ handleHeader outdir incfiles exclclasses excls rens headername objs = do
         hPrintf h "\n"
         hPrintf h "extern \"C\"\n"
         hPrintf h "{\n"
-        -- hPrintf h "#ifndef CGEN_OUTPUT_INTERN\n"
-        -- hPrintf h "\n"
-        -- forM_ classnames $ \cl -> do
-            -- hPrintf h "struct %s;\n" cl
-        -- hPrintf h "\n"
-        -- hPrintf h "#else\n"
         hPrintf h "\n"
         forM_ namespaces $ \ns -> do
             hPrintf h "using namespace %s;\n" ns
         hPrintf h "\n"
         forM_ typedefs $ \(td1, td2) -> do
             hPrintf h "typedef %s %s;\n" td1 td2
-        -- hPrintf h "\n"
-        -- hPrintf h "#endif\n"
-        hPrintf h "\n"
+        hPrintf h "\n\n"
+        hPrintf h "#ifdef CGEN_HS\n"
+        forM_ (getEnums objs) $ \enum -> do
+            hPutStrLn h $ enumDeclaration (enumname enum) (enumvalues enum)
+        hPrintf h "#endif\n\n"
+
         forM_ funs $ \fun -> do
             hPutStrLn h $ funDeclaration (funname fun) (rettype fun) (paramFormat (params fun))
         hPrintf h "\n"
@@ -146,6 +143,14 @@ funDefinition fnname rttype clname fnparams
 funDeclaration :: String -> String -> String -> String
 funDeclaration fnname rttype fnparams =
     printf "%s %s(%s);" (stripStatic rttype) fnname fnparams
+
+enumDeclaration :: String -> [EnumVal] -> String
+enumDeclaration ename evalues = 
+  if not (enumReadable evalues) then "" else printf "enum %s {\n    %s\n};\n\n" ename vals
+    where vals = intercalate ",\n    " (map printEnumval (getEnumValues evalues))
+
+printEnumval :: (String, Int) -> String 
+printEnumval (n, v) = printf "%s = %d" n v
 
 refParamsToPointers f@(FunDecl _ _ ps _ _ _ _) =
   f{params = map refToPointerParam ps}

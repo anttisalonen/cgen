@@ -72,6 +72,25 @@ getFuns (o:os) =
     (ExternDecl _ os2)      -> getFuns os2 ++ getFuns os
     _                       -> getFuns os
 
+getEnums :: [Object] -> [Object]
+getEnums [] = []
+getEnums (o:os) = 
+  case o of
+    (EnumDef _ _ _)         -> o : getEnums os
+    (Namespace _ os2)       -> getEnums os2 ++ getEnums os
+    (ClassDecl _ _ n _ os2) -> 
+       case n of
+         []              -> getEnums (map snd os2) ++ getEnums os
+         ((Public, _):_) -> getEnums (map snd os2) ++ getEnums os
+         _               -> getEnums os
+    (ExternDecl _ os2)      -> getEnums os2 ++ getEnums os
+    _                       -> getEnums os
+
+addEnumNamespace :: Object -> Object
+addEnumNamespace e@(EnumDef n _ nest)
+  = e{enumname = concatMap (++"::") (map snd nest) ++ n}
+addEnumNamespace o = o
+
 getClasses :: [Object] -> [Object]
 getClasses [] = []
 getClasses (o:os) = 

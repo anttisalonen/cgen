@@ -2,6 +2,7 @@ module CppUtils
 where
 
 import Data.List
+import Control.Monad.State
 
 import qualified Data.Set as S
 
@@ -115,4 +116,26 @@ isStdType "uint16" = True
 isStdType "uint32" = True
 isStdType "uint64" = True
 isStdType _ = False
+
+getEnumValues :: [EnumVal] -> [(String, Int)]
+getEnumValues es = evalState go 0
+  where go :: State Int [(String, Int)]
+        go = mapM f es
+        f :: EnumVal -> State Int (String, Int)
+        f (EnumVal en ev) = do
+          oldval <- get
+          let thisval = case ev of
+                         Nothing -> oldval
+                         Just m  -> case reads m of
+                                      [(v, _)] -> v
+                                      _        -> oldval
+          put $ thisval + 1
+          return (en, thisval)
+
+enumReadable :: [EnumVal] -> Bool
+enumReadable = all valid . map enumvalue
+  where valid Nothing  = True
+        valid (Just n) = case (reads :: String -> [(Int, String)]) n of
+                           [(_, [])] -> True
+                           _        -> False
 
