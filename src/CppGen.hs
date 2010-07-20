@@ -96,9 +96,10 @@ handleHeader outdir incfiles exclclasses excls rens headername objs = do
 
   where outfile    = (outdir </> headername)
         cppoutfile = (outdir </> takeBaseName headername <.> "cpp")
-        allfuns    = filter (\f -> publicMemberFunction f && 
+        allfuns    = implicitcdtors ++ filter (\f -> publicMemberFunction f && 
                                    not (excludeFun f) && 
                                    not (abstractConstructor classes f)) (getFuns objs)
+        implicitcdtors = concatMap getImplicitCDtor classes
         namespaces = filter (not . null) $ nub $ map (headDef "") (map fnnamespace funs)
         -- list of names of all parsed classes
         classnames = filter (not . null) $ nub $ map getObjName $ getClasses objs
@@ -128,6 +129,32 @@ handleHeader outdir incfiles exclclasses excls rens headername objs = do
                       addThisPointer .  -- 1st parameter
                       extendFunc $ f -- constructor & destructor handling
         usedtypes  = getAllTypes funs
+
+getImplicitCDtor :: Object -> [Object]
+getImplicitCDtor c@(ClassDecl cname _ _ cns objs)
+  | null objs
+      = [] -- forward declaration
+  | not (publicClass c)
+      = [] 
+  | abstractClass c
+      = [] 
+  | otherwise
+      = dl ++ cl
+      where dl = if any isDestructor (map snd objs) -- explicit destructor
+                   then []
+                   else [FunDecl ('~':cname) "void" [] cns (Just (Public, cname)) False False]
+            cl = if any isConstructor (map snd objs) -- explicit constructor
+                   then []
+                   else [FunDecl cname "" [] cns (Just (Public, cname)) False False]
+getImplicitCDtor _ = []
+
+isConstructor :: Object -> Bool
+isConstructor (FunDecl fname _ _ _ (Just (_, cname)) _ _) = fname == cname
+isConstructor _                                           = False
+
+isDestructor :: Object -> Bool
+isDestructor (FunDecl fname _ _ _ (Just (_, cname)) _ _) = fname == '~':cname
+isDestructor _                                           = False
 
 funDefinition :: String -> String -> String -> String -> String
 funDefinition fnname rttype clname fnparams

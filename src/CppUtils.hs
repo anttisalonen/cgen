@@ -139,3 +139,13 @@ enumReadable = all valid . map enumvalue
                            [(_, [])] -> True
                            _        -> False
 
+publicClass :: Object -> Bool
+publicClass (ClassDecl _ _ nest _ _) =
+  all (== Public) $ map fst nest
+publicClass _                        = False
+
+abstractClass :: Object -> Bool
+abstractClass (ClassDecl _ _ _ _ objs) =
+  any isAbstractFun (map snd objs)
+abstractClass _ = False
+

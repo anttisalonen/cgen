@@ -19,7 +19,7 @@ data Object = FunDecl {
               , params       :: [ParamDecl]
               , fnnamespace  :: [String]
               , fnvisibility :: Maybe (InheritLevel, String)
-              , constclass   :: Bool
+              , constclass   :: Bool -- void f() const;
               , abstract     :: Bool
               }
             | Namespace String [Object]
