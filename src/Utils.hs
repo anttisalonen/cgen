@@ -17,7 +17,7 @@ decapitalize (h:hs) = toLower h : hs
 replace :: String -> String -> String -> String
 replace old new str = 
   let (s1, s2, s3) = str =~ old
-  in if s2 == old
+  in if s2 /= ""
        then s1 ++ new ++ s3
        else str
 

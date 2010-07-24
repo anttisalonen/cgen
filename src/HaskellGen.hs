@@ -136,29 +136,35 @@ haskellGen opts objs = do
                     forM_ inheritances $ \i -> do
                          hPrintf h "instance C%s %s where\n  to%s (%s p) = %s (castPtr p)\n\n" cname i cname i cname
 
-    allfuns <- forM funs $ \(file, filefuns) ->
+    expfuns <- forM funs $ \(file, filefuns) ->
         withFile (outdir </> ((takeBaseName file) ++ ".hs")) WriteMode $ \h -> do
             allgenfuns <- catMaybes <$> (forM filefuns $ \fun -> do
                 case cfunToHsFun enumnames opts file fun of
                   Right hsf -> return $ Just hsf
                   Left  err -> hPrintf stderr "Function %s discarded:\n\t%s\n" (getObjName fun) err >> return Nothing)
+            let constructors = filter isConstructor allgenfuns
+                withfunnames = map withFunName constructors
             hPrintf h "{-# LANGUAGE ForeignFunctionInterface #-}\n"
             hPrintf h "module %s%s(\n%s\n)\n\nwhere\n\nimport %sTypes\nimport Control.Monad\n\n" 
                       modprefix 
                       (takeBaseName file) 
-                      (intercalate ", \n" $ map hsfunname allgenfuns)
+                      (intercalate ", \n" $ withfunnames ++ map hsfunname allgenfuns)
                       modprefix
             hPutStrLn h importForeign
+            mapM_ (addWithFun h) $ filter isConstructor allgenfuns
             forM_ allgenfuns $ addFun h
-            return allgenfuns
+            return $ withfunnames ++ map hsfunname allgenfuns
 
     when (not . null $ umbrellamodule opts) $ do
         withFile (outdir </> (umbrellamodule opts)) WriteMode $ \h -> do
             hPrintf h "module %s%s(\n  %s\n)\n\nwhere\n\n%s\n" 
                       modprefix
                       (takeBaseName $ umbrellamodule opts)
-                      (intercalate ", \n  " (map hsfunname (concat allfuns)))
+                      (intercalate ", \n  " $ concat expfuns)
                       (intercalate "\n" $ map (("import " ++ modprefix) ++) (map (takeBaseName . fst) funs))
+
+withFunName :: HsFun -> String
+withFunName = replace "new" "with" . hsfunname
 
 -- creates the HsFun.
 cfunToHsFun :: [String] -> Options -> FilePath -> Object -> Either String HsFun
@@ -206,17 +212,20 @@ cTypeToHsType enums t
                Nothing -> (NoCConv, printHsType enums t)
                Just t' -> (convFunc t, t')
 
+paramList :: HsFun -> String
+paramList = intercalate " " . paramNames . length . hsparams
+
 -- creates the Haskell function definition.
 hsFunDefinition :: HsFun -> String
 hsFunDefinition h = printf "%s %s = %s" 
                (hsfunname h) 
-               (intercalate " " (paramList (length (hsparams h)))) 
+               (paramList h)
                (hsFunDef (hsfunname h) (hsparams h) (snd $ head $ hsrettypes h))
 
   where
     hsFunDef :: String -> [(CConv, String)] -> HsConv -> String
     hsFunDef fn inparams retparam = 
-      let ptypes = zip (paramList maxBound) (map (correctType . stripConst . snd) inparams)
+      let ptypes = zip (paramNames maxBound) (map (correctType . stripConst . snd) inparams)
           cstrings = filter (\(_, t) -> t == "String") ptypes
           mkCString (pnm, _) = printf "withCString %s $ \\c%s -> \n  " pnm pnm
           resLift = case retparam of
@@ -262,10 +271,18 @@ addFun h hsf = do
   typeSigHsFun hf = 
     printf "%s :: %sIO %s" 
                       (hsfunname hf)
-                      (if null (hsparams hf) then "" else intercalate " -> " (map snd $ hsparams hf) ++ " -> ")
-                      (pref ++ intercalate ", " hsr ++ suff)
-   where (pref, suff) = if length hsr == 1 then ("", "") else ("(", ")")
-         hsr          = map (snd . fst) $ hsrettypes hf
+                      (typeSigList hf)
+                      (hsFunRetType hf)
+
+hsFunRetType :: HsFun -> String
+hsFunRetType hf =
+  let hsr          = map (snd . fst) $ hsrettypes hf
+      (pref, suff) = if length hsr == 1 then ("", "") else ("(", ")")
+  in pref ++ intercalate ", " hsr ++ suff
+
+-- e.g. "String -> String -> String ->"
+typeSigList :: HsFun -> String
+typeSigList hf = if null (hsparams hf) then "" else intercalate " -> " (map snd $ hsparams hf) ++ " -> "
 
 -- checks whether the given type can be used.
 -- The type can be used, if:
@@ -292,6 +309,32 @@ typeValidMsg enums opts t = validateAll [(t /= "void*", "Void pointer not suppor
         hasDir = isPtr t == 0 ||
                    (isPtr t == 1 && (not $ isJust $ cTypeToHs t)) ||
                    t `elem` defaultins opts
+
+addWithFun :: Handle -> HsFun -> IO ()
+addWithFun h fun = do
+  let fn  = hsfunname fun
+      fnw = withFunName fun
+      dst = replace "new.*" "delete" fn
+      typ = hsFunRetType fun
+      pl  = paramList fun
+  hPrintf h "%s :: %s(%s -> IO a) -> IO a\n" fnw (typeSigList fun) typ
+  hPrintf h "%s %s f = do\n" fnw pl
+  hPrintf h "    obj <- %s %s\n" fn pl
+  hPrintf h "    res <- f obj\n"
+  hPrintf h "    %s obj\n" dst
+  hPrintf h "    return res\n\n"
+
+isConstructor :: HsFun -> Bool
+isConstructor = constructor . hsfunname
+
+isDestructor :: HsFun -> Bool
+isDestructor = destructor . hsfunname
+
+destructor :: String -> Bool
+destructor fn = fn =~ ".*_delete$"
+
+constructor :: String -> Bool
+constructor fn = fn =~ ".*_new[0-9]*$"
 
 importForeign :: String
 importForeign = "import Foreign\nimport Foreign.C.String\nimport Foreign.C.Types\n"
@@ -334,8 +377,8 @@ convRevFunc enums t
                  then HsConv $ printf "cintTo%s" entype
                  else NoHsConv
 
-paramList :: Int -> [String]
-paramList n = map ('p':) (map show [1..n])
+paramNames :: Int -> [String]
+paramNames n = map ('p':) (map show [1..n])
 
 -- printHsType "const char **" = "(Ptr (Ptr CChar))"
 printHsType :: [String] -> String -> String
