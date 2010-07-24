@@ -132,8 +132,8 @@ handleHeader outdir incfiles exclclasses excls rens headername objs = do
 
 getImplicitCDtor :: Object -> [Object]
 getImplicitCDtor c@(ClassDecl cname _ _ cns objs)
-  | null objs
-      = [] -- forward declaration
+  | null $ filter (not . isAbstractFun) $ getFuns . map snd . filter (\(p, _) -> p == Public) $ objs
+      = [] -- forward declaration or abstract
   | not (publicClass c)
       = [] 
   | abstractClass c
