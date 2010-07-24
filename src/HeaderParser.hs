@@ -48,7 +48,7 @@ oneobj = do
   case w of
     "namespace" -> namespace (many1 oneobj)
     "class"     -> classDecl 
-    "struct"    -> structDecl
+    "struct"    -> try structDecl <|> varFunDecl "struct"
     "typedef"   -> typedef 
     "enum"      -> enum
     "extern"    -> extern
