@@ -108,7 +108,7 @@ haskellGen opts objs = do
                 hPrintf h "cintTo%s :: CInt -> %s\n" hstypename hstypename
                 forM_ constrs $ \(c, v) -> do
                     hPrintf h "cintTo%s %d = %s\n" hstypename v c
-                hPrintf h "cintTo%s n = error \"cintTo%s: can not convert integer \\\" ++ show n ++ \\\" to %s\"\n" hstypename hstypename hstypename
+                hPrintf h "cintTo%s n = error $ \"cintTo%s: can not convert integer '\" ++ show n ++ \"' to %s\"\n" hstypename hstypename hstypename
                 hPrintf h "\n"
               _                     -> let t' = hstypify t in hPrintf h "newtype %s = %s (Ptr %s) -- nullary data type\n" t' t' t'
         hPrintf h "\n"
