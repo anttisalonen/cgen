@@ -1,0 +1,21 @@
+digraph G
+{
+	node [shape = box];
+	"C++ headers";
+	"cgen interface file";
+	"cgen-hs interface file";
+	node [shape = ellipse];
+	"cgen";
+	"cgen-hs";
+	// node [shape = box, style = filled, color = "#f0a0a0"];
+	"generated C/C++ library";
+	"generated Haskell bindings";
+
+	"C++ headers" -> "cgen";
+	"cgen interface file" -> "cgen";
+	"cgen" -> "generated C/C++ library";
+	"generated C/C++ library" -> "cgen-hs";
+	"cgen-hs interface file" -> "cgen-hs";
+	"cgen-hs" -> "generated Haskell bindings";
+}
+
