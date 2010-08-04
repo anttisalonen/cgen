@@ -5,7 +5,7 @@ Name:                cgen
 Version:             0.0.1
 Synopsis:            A C interface generator from C++ headers
 -- Description:         
-License:             MIT
+License:             BSD3
 License-file:        LICENSE
 Author:              Antti Salonen
 Maintainer:          ajsalonen at gmail dot com
