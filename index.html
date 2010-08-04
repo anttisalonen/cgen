@@ -61,6 +61,49 @@ cabal configure [--user] &amp;&amp; cabal build &amp;&amp; cabal install</p>
 <p>
 <img src="graph.png"/>
 </p>
+<ol>
+	<li>Write an interface file for cgen</li>
+	<li>cgen -o c-output-dir --interface my-interface-file --include path-to-cpp-headers header1.h header2.h ...</li>
+	<li>Write an interface file for cgen-hs</li>
+	<li>cgen-hs -o hs-output-dir --interface my-cgen-hs-interface-file c-output-dir/*.h</li>
+</ol>
+<h3>Interface files for cgen</h3>
+<p>
+<ul>
+	<li>section @exclude: List of functions to exclude - regular expressions allowed</li>
+	<li>section @header: List of the header(s) the generated C library files should include</li>
+	<li>section @rename: renamings of types in the generated C library. Format: oldtype|newtype</li>
+	<li>section @exclude-class: List of classes to exclude - regular expressions allowed</li>
+	<li>lines starting with # are comments</li>
+</ul>
+Example:
+<xmp>
+@exclude
+^_.*
+.*Listener
+
+# This is a comment.
+getErrorDescription
+getSetting
+
+@header
+OGRE/Ogre.h
+
+@rename
+uint|unsigned int
+ulong|unsigned long
+ushort|unsigned short
+
+# Superclass typedefs.
+TransformSpace|Node::TransformSpace
+DebugRenderable|Node::DebugRenderable
+String|char*
+
+@exclude-class
+.*Listener
+</xmp>
+
+</p>
 <h2>License</h2>
 <p>BSD</p>
 <h2>Authors</h2>
