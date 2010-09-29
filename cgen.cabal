@@ -2,7 +2,7 @@
 -- see
 -- http://www.haskell.org/cabal/release/cabal-latest/doc/users-guide/authors.html#pkg-descr.
 Name:                cgen
-Version:             0.0.1
+Version:             0.0.2
 Synopsis:            generates Haskell bindings and C wrappers for C++ libraries
 Description:         cgen parses C++ headers and generates C wrappers and 
                      Haskell bindings to a C++ library.
