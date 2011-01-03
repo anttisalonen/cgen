@@ -1,0 +1,282 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+
+		<title>anttisalonen/cgen @ GitHub</title>
+
+		<style type="text/css">
+			body {
+				margin-top: 1.0em;
+				background-color: #ffffff;
+				font-family: "Helvetica,Arial,FreeSans";
+				color: #000000;
+			}
+			#container {
+				margin: 0 auto;
+				width: 700px;
+			}
+			h1 { font-size: 3.8em; color: #9122c3; margin-bottom: 3px; }
+			h1 .small { font-size: 0.4em; }
+			h1 a { text-decoration: none }
+			h2 { font-size: 1.5em; color: #9122c3; }
+			h3 { text-align: center; color: #9122c3; }
+			a { color: #9122c3; }
+			.description { font-size: 1.2em; margin-bottom: 30px; margin-top: 30px;}
+			.download { float: right; }
+			pre { background: #000; color: #fff; padding: 15px;}
+			hr { border: 0; width: 80%; border-bottom: 1px solid #aaa}
+			.footer { text-align:center; padding-top:30px; font-style: italic; }
+		</style>
+
+	</head>
+
+	<body>
+
+		<div id="container">
+
+			<h1><a href="http://github.com/anttisalonen/cgen">cgen</a>
+				</h1>
+
+			<div class="description">
+				cgen generates Haskell bindings to C++ libraries
+			</div>
+
+			<h2>Animals - a simple example for cgen</h2>
+			<p>Here's the input, a library with animals.</p>
+			<pre>
+/* Animal.h */
+namespace Animals {
+class Animal {
+        public:
+                Animal()
+                        : age(0) { }
+                ~Animal() { }
+                virtual void make_sound() = 0;
+                int get_age() const
+                {
+                        return age; }
+                void increment_age()
+                {
+                        age++;
+                }
+        private:
+                int age;
+};
+
+/* Dog.h */
+class Dog : public Animal {
+        public:
+                Dog() { }
+                void make_sound()
+                {
+                        std::cout &lt;&lt; "Growl!\n";
+                }
+};
+
+/* Sheep.h */
+class Sheep : public Animal {
+        public:
+                Sheep(int wooliness_level_ = 0)
+                        : wooliness_level(wooliness_level_)
+                { }
+                void make_sound()
+                {
+                        std::cout &lt;&lt; "Baa!\n";
+                }
+                void shear()
+                { /* something */ }
+        private:
+                int wooliness_level;
+};
+}
+			</pre>
+			<h2>C wrapper generation and compilation</h2>
+			<p>The first thing to do is to create the C++ library with a C interface:</p>
+			<pre>
+$ cgen -o c --header=Animal.h --header=Dog.h \
+    --header=Sheep.h cpp/Dog.h cpp/Sheep.h cpp/Animal.h</pre>
+			<p>This command creates the C wrapper in directory "c". The given header files are those that
+			the files in the C wrapper need to include in order to compile. This is what the output looks like:</p>
+			<pre>
+$ cat c/Sheep.h
+fndef CGEN_SHEEP_H
+#define CGEN_SHEEP_H
+
+#include &lt;Sheep.h&gt;
+#include &lt;Dog.h&gt;
+#include &lt;Animal.h&gt;
+
+extern "C"
+{
+
+using namespace Animals;
+
+
+
+#ifdef CGEN_HS
+#endif
+
+void Animals_Sheep_delete(Sheep* this_ptr);
+Sheep* Animals_Sheep_new(int wooliness_level_);
+void Animals_Sheep_make_sound(Sheep* this_ptr);
+void Animals_Sheep_shear(Sheep* this_ptr);
+
+}
+
+#endif
+			</pre>
+			<pre>
+$ cat c/Sheep.cpp
+#define CGEN_OUTPUT_INTERN
+#include "Sheep.h"
+void Animals_Sheep_delete(Sheep* this_ptr)
+{
+    delete this_ptr;
+}
+
+Sheep* Animals_Sheep_new(int wooliness_level_)
+{
+    return new Sheep(wooliness_level_);
+}
+
+void Animals_Sheep_make_sound(Sheep* this_ptr)
+{
+    this_ptr-&gt;make_sound();
+}
+
+void Animals_Sheep_shear(Sheep* this_ptr)
+{
+    this_ptr-&gt;shear();
+}
+			</pre>
+			<p>Now, the C wrapper can be compiled and an archive file can be created for static linking:</p>
+			<pre>
+$ g++ -c -Icpp -o c/Animal.o c/Animal.cpp
+$ g++ -c -Icpp -o c/Dog.o c/Dog.cpp
+$ g++ -c -Icpp -o c/Sheep.o c/Sheep.cpp
+$ ar q libanimals.a c/Animal.o c/Dog.o c/Sheep.o</pre>
+			<h2>Haskell wrapper generation and compilation</h2>
+			<p>For creating the Haskell bindings, a class inheritance graph must first be created using grgen.
+			This is necessary for creating the functions for upcasting in Haskell, which is implicit in C++.</p>
+			<pre>
+$ grgen -o graph cpp/Animal.h cpp/Dog.h cpp/Sheep.h
+$ cat graph
+Animal|
+Dog|Animal
+Sheep|Animal</pre>
+			<p>Then, the Haskell wrapper can be generated using cgen-hs. The files will be written in the "hs" directory.</p>
+			<pre>
+$ cgen-hs -o hs --inherit=graph c/Animal.h c/Sheep.h c/Dog.h</pre>
+			<p>This is what the output looks like:</p>
+			<pre>
+$ cat hs/Sheep.hs
+{-# LANGUAGE ForeignFunctionInterface #-}
+module Sheep(
+sheep_with, 
+sheep_delete, 
+sheep_new, 
+sheep_make_sound, 
+sheep_shear
+)
+
+where
+
+import Types
+import Control.Monad
+
+import Foreign
+import Foreign.C.String
+import Foreign.C.Types
+
+sheep_with :: Int -&gt; (Sheep -&gt; IO a) -&gt; IO a
+sheep_with p1 f = do
+    obj &lt;- sheep_new p1
+    res &lt;- f obj
+    sheep_delete obj
+    return res
+
+foreign import ccall "Sheep.h Animals_Sheep_delete" c_sheep_delete :: Sheep -&gt; IO ()
+sheep_delete :: Sheep -&gt; IO ()
+sheep_delete p1 =   c_sheep_delete p1
+
+foreign import ccall "Sheep.h Animals_Sheep_new" c_sheep_new :: CInt -&gt; IO Sheep
+sheep_new :: Int -&gt; IO Sheep
+sheep_new p1 =   c_sheep_new (fromIntegral p1)
+
+foreign import ccall "Sheep.h Animals_Sheep_make_sound"
+        c_sheep_make_sound :: Sheep -&gt; IO ()
+sheep_make_sound :: Sheep -&gt; IO ()
+sheep_make_sound p1 =   c_sheep_make_sound p1
+
+foreign import ccall "Sheep.h Animals_Sheep_shear" c_sheep_shear :: Sheep -&gt; IO ()
+sheep_shear :: Sheep -&gt; IO ()
+sheep_shear p1 =   c_sheep_shear p1
+			</pre>
+			<p>In addition to generating Haskell files that directly correspond to the header
+			files, a file Types.hs is created, which has the code defining the upcasts
+			mentioned above:</p>
+			<pre>
+$ cat hs/Types.hs
+module Types
+where
+
+import Foreign
+import Foreign.C.String
+import Foreign.C.Types
+
+type CBool = CChar
+
+newtype Animal = Animal (Ptr Animal) -- nullary data type
+newtype Dog = Dog (Ptr Dog) -- nullary data type
+newtype Sheep = Sheep (Ptr Sheep) -- nullary data type
+newtype Void = Void (Ptr Void) -- nullary data type
+
+class CAnimal a where
+  toAnimal :: a -&gt; Animal
+
+instance CAnimal Dog where
+  toAnimal (Dog p) = Animal (castPtr p)
+
+instance CAnimal Sheep where
+  toAnimal (Sheep p) = Animal (castPtr p)
+			</pre>
+			<h2>Usage of the Haskell wrapper</h2>
+			<p>Then, the Haskell library can be used:</p>
+			<pre>
+$ cat Main.hs
+module Main
+where
+
+import Control.Monad (replicateM_)
+
+import Types
+import Animal
+import Dog
+import Sheep
+
+main = do
+  dog_with $ \d -&gt; 
+    sheep_with 1 $ \s -&gt; do
+      dog_make_sound d
+      sheep_make_sound s
+      sheep_shear s
+      replicateM_ 5 $ animal_increment_age (toAnimal s)
+      animal_get_age (toAnimal s) &gt;&gt;= \a -&gt; putStrLn $ "The sheep is now " ++
+          show a ++ " years old!"
+			</pre>
+			<p>This can be compiled as follows (note linking against
+			the created static library as well as the C++ runtime):</p>
+			<pre>
+$ ghc --make -o Main -L. -lanimals -lstdc++ Main.hs</pre>
+			<p>Result:</p>
+			<pre>
+$ ./Main
+Growl!
+Baa!
+The sheep is now 5 years old!</pre>
+		</div>
+	</body>
+</html>
