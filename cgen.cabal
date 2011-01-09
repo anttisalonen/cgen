@@ -75,6 +75,8 @@ Executable grgen
                        -fno-warn-unused-binds
                        -fno-warn-unused-do-bind
 
+Library
+
 Source-repository head
   type:      git
   location:  git://github.com/anttisalonen/cgen.git
