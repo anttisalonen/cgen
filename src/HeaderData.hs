@@ -11,7 +11,7 @@ data ParamDecl = ParamDecl {
   , varvalue  :: Maybe String
   , vararray  :: Maybe String
   }
-  deriving (Eq, Read, Show)
+  deriving (Eq, Read, Show, Ord)
 
 data Object = FunDecl {
                 funname      :: String
@@ -39,22 +39,22 @@ data Object = FunDecl {
               }
             | ExternDecl String [Object]
             | Using Bool String
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Ord)
 
 data InheritDecl = InheritDecl {
     inheritname  :: String
   , inheritlevel :: InheritLevel
   }
-  deriving (Eq, Read, Show)
+  deriving (Eq, Read, Show, Ord)
 
 data InheritLevel = Public | Protected | Private
-  deriving (Eq, Read, Show, Enum, Bounded)
+  deriving (Eq, Read, Show, Enum, Bounded, Ord)
 
 data EnumVal = EnumVal {
     enumvaluename :: String
   , enumvalue     :: Maybe String
   }
-  deriving (Eq, Read, Show)
+  deriving (Eq, Read, Show, Ord)
 
 type Header = [Object]
 
