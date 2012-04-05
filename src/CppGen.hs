@@ -373,13 +373,19 @@ correctFuncRetType f@(FunDecl _ fr _ _ _ _ _)
 correctFuncRetType n = n
 
 -- o(n^2).
--- simply adds a number at the end of the overloaded function name.
+-- adds cleaned up type names at the end of the overloaded function name.
 mangle :: [Object] -> [Object]
 mangle []     = []
 mangle (n:ns) = 
-  let num = length $ filter (== funname n) $ map funname ns
-      m   = n{funname = funname n ++ show num}
-  in if num == 0
+  let m   = n{funname = funname n ++ functionMangleSuffix n}
+  in if null $ filter (== funname n) $ map funname ns
        then n : mangle ns
        else m : mangle ns
 
+functionMangleSuffix :: Object -> String
+functionMangleSuffix (FunDecl _ _ [] _ _ _ _) = "_void"
+functionMangleSuffix (FunDecl _ _ ps _ _ _ _) = '_' : concatMap (mangleType . vartype) ps
+functionMangleSuffix _ = ""
+
+mangleType :: String -> String
+mangleType = filter (`notElem` ": <>") . map (\c -> if c == '*' then 'P' else if c == '&' then 'R' else c) . replace "::type" "" . stripConst

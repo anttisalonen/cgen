@@ -149,3 +149,12 @@ abstractClass (ClassDecl _ _ _ _ objs) =
   any isAbstractFun (map snd objs)
 abstractClass _ = False
 
+removeNamespace :: String -> String
+removeNamespace = map (\c -> if c == ':' then '_' else c)
+
+stripNamespace :: String -> String
+stripNamespace = last . takeWhile (not . null) . iterate (dropWhile (==':') . snd . break (== ':'))
+
+fixNamespace :: [String] -> String -> String
+fixNamespace enums n = (if (stripNamespace n) `elem` enums then stripNamespace else removeNamespace) n
+

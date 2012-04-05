@@ -151,7 +151,7 @@ haskellGen opts objs = do
                       (intercalate ", \n" $ withfunnames ++ map hsfunname allgenfuns)
                       modprefix
             hPutStrLn h importForeign
-            mapM_ (addWithFun h) $ filter isConstructor allgenfuns
+            mapM_ (addWithFun h) constructors
             forM_ allgenfuns $ addFun h
             return $ withfunnames ++ map hsfunname allgenfuns
 
@@ -175,7 +175,7 @@ cfunToHsFun enumnames opts filename (FunDecl fname rt ps _ _ _ _) =
               fname 
               (map (cTypeToHsCType enumnames) pts)
               (cTypeToHsCType enumnames rt) 
-              (decapitalize $ dropWhile (== '_') $ dropWhile (/= '_') fname)
+              (decapitalize $ if '_' `elem` fname then dropWhile (== '_') $ dropWhile (/= '_') fname else fname)
               (map (cTypeToHsType enumnames) pts)
               ([(cTypeToHsType enumnames rt, convRevFunc enumnames rt)])
     l  -> Left (intercalate "\n" l)
@@ -334,7 +334,7 @@ destructor :: String -> Bool
 destructor fn = fn =~ ".*_delete$"
 
 constructor :: String -> Bool
-constructor fn = fn =~ ".*_new[0-9]*$"
+constructor fn = fn =~ ".*_new($|_.*$)"
 
 importForeign :: String
 importForeign = "import Foreign\nimport Foreign.C.String\nimport Foreign.C.Types\n"
@@ -452,12 +452,4 @@ printHsParams [] = ""
 printHsParams types = 
   intercalate " -> " types ++ " -> " 
 
-removeNamespace :: String -> String
-removeNamespace = map (\c -> if c == ':' then '_' else c)
-
-stripNamespace :: String -> String
-stripNamespace = last . takeWhile (not . null) . iterate (dropWhile (==':') . snd . break (== ':'))
-
-fixNamespace :: [String] -> String -> String
-fixNamespace enums n = (if (stripNamespace n) `elem` enums then stripNamespace else removeNamespace) n
 
