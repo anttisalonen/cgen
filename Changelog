@@ -1,2 +1,7 @@
+0.0.4 - 2012-04-05
+- change function name mangling algorithm (parameter types are now appended
+to the function name)
+- fix bug where a type declaration might be output twice
+
 0.0.3 - 2011-01-09
 - add dummy library for dependency checks
