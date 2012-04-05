@@ -85,7 +85,7 @@ haskellGen opts objs = do
     hPutStrLn stderr $ "Rejected types: "
     forM_ (S.toList rejtypes) print
     hPutStrLn stderr $ "Used types: "
-    let hstypes = nub $ filter (not . isStdType . stripPtr) (S.toList cpptypes)
+    let hstypes = nubBy (\x y -> hstypify x == hstypify y) $ filter (not . isStdType . stripPtr) (S.toList cpptypes)
         typefile = outdir </> "Types.hs"
         hstypify = capitalize . stripPtr . removeNamespace
 
