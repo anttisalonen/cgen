@@ -347,7 +347,7 @@ cPrefix = "c_"
 convFunc :: String -> CConv
 convFunc ptype =
   case fromMaybe "" $ cTypeToHs ptype of
-    "CChar"   -> CConvFunc "castCCharToChar" 
+    "CChar"   -> CConvFunc "castCharToCChar"
     "CSChar"  -> CConvFunc "fromIntegral" 
     "CUChar"  -> CConvFunc "fromIntegral" 
     "CShort"  -> CConvFunc "fromIntegral" 
