@@ -124,7 +124,7 @@ haskellGen opts objs = do
 
             let hstypeset = (S.\\) (S.fromList (map hstypify hstypes)) (S.fromList enumnames) 
                 inheritlist :: [(String, [String])]
-                inheritlist = M.toList . foldr (\(k, a) acc -> M.insertWith (++) k [a] acc) M.empty . map swap . expand . catMaybes $ 
+                inheritlist = M.toList . foldr (\(k, a) acc -> M.insertWith' (++) k [a] acc) M.empty . map swap . expand . catMaybes $
                   for inheritdata $ \(cname, superclasses) ->
                       if hstypify cname `S.member` hstypeset 
                          then Just (hstypify cname, catMaybes $ for superclasses $ \s ->
