@@ -113,8 +113,8 @@ handleHeader outdir incfiles exclclasses excls rens headername objs = do
         typedefs   = nub $ extratypedefs ++ usedtypedefs
         allenums   = map snd $ filter (\(v, o) -> isEnum o && v == Public) $ concatMap classobjects classes
         funs       = mangle $ map expandFun allfuns
-        excludeFun f = lastDef ' ' (correctType $ rettype f) == '&' || -- TODO: allow returned references
-                       or (map (\e -> funname f =~ e) excls) ||
+        functionReturnsRef f = lastDef ' ' (correctType $ rettype f) == '&'
+        excludeFun f = or (map (\e -> funname f =~ e) excls) ||
                        or (map (\e -> fromMaybe "" (liftM snd (fnvisibility f)) =~ e) exclclasses) ||
                        take 8 (rettype f) == "template" ||  -- TODO: allow return types that start with "template"
                        rettype f == "operator" ||  -- conversion operator is parsed as operator as return type
@@ -163,9 +163,10 @@ funDefinition fnname rttype clname fnparams
   | isStatic rttype && stripStatic rttype == "void" 
       = printf "    %s::%s(%s);" clname fnname fnparams
   | isStatic rttype 
-      = printf "    return %s::%s(%s);" clname fnname fnparams
+      = printf "    return %s%s::%s(%s);" getaddr clname fnname fnparams
   | otherwise 
-      = printf "    return this_ptr->%s(%s);" fnname fnparams
+      = printf "    return %sthis_ptr->%s(%s);" getaddr fnname fnparams
+ where getaddr = if isRef rttype then "&" else ""
 
 funDeclaration :: Object -> Bool -> String
 funDeclaration fun semicolon =
@@ -283,9 +284,11 @@ addClassQual enums classes rt =
 
 -- addNamespaceQual ["aa", "bb"] "foo" = "bb::aa::foo"
 -- addNamespaceQual ["aa", "bb"] "static foo" = "static bb::aa::foo"
+-- TODO: won't work when both defined with both static and const.
 addNamespaceQual :: [String] -> String -> String
 addNamespaceQual ns n
   | isStatic n = "static " ++ addNamespaceQual ns (stripStatic n)
+  | isConst n  = "const "  ++ addNamespaceQual ns (stripConst n)
   | otherwise  = concatMap (++ "::") ns ++ n
 
 -- turn a "char& param" into "*param".
