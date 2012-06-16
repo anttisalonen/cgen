@@ -33,9 +33,12 @@ correctParam p = p{vartype = correctType (vartype p)} -- TODO: arrays?
 refToPointerParam :: ParamDecl -> ParamDecl
 refToPointerParam p = p{vartype = refToPointer (vartype p)}
 
+isRef :: String -> Bool
+isRef t = last t == '&'
+
 refToPointer :: String -> String
 refToPointer t = 
-  if last t == '&'
+  if isRef t
     then init t ++ "*"
     else t
 
@@ -63,7 +66,7 @@ handleHeader outdir incfiles exclclasses excls rens headername objs = do
         hPrintf h "#endif\n\n"
 
         forM_ funs $ \fun -> do
-            hPutStrLn h $ funDeclaration (funname fun) (rettype fun) (paramFormat (params fun))
+            hPutStrLn h $ funDeclaration fun True
         hPrintf h "\n"
         hPrintf h "}\n"
         hPrintf h "\n"
@@ -76,10 +79,7 @@ handleHeader outdir incfiles exclclasses excls rens headername objs = do
         hPrintf h "#include \"%s\"" headername
         hPrintf h "\n"
         forM_ (zip funs allfuns) $ \(fun, origfun) -> do
-            hPrintf h "%s %s(%s)\n" 
-                (stripStatic $ rettype fun)
-                (funname fun)
-                (paramFormat (params fun))
+            hPutStrLn h $ funDeclaration fun False
             hPrintf h "{\n"
             -- NOTE: do NOT call refToPointerParam or refParamsToPointers
             -- for prs, because then the information that the parameter
@@ -167,9 +167,13 @@ funDefinition fnname rttype clname fnparams
   | otherwise 
       = printf "    return this_ptr->%s(%s);" fnname fnparams
 
-funDeclaration :: String -> String -> String -> String
-funDeclaration fnname rttype fnparams =
-    printf "%s %s(%s);" (stripStatic rttype) fnname fnparams
+funDeclaration :: Object -> Bool -> String
+funDeclaration fun semicolon =
+    printf "%s %s(%s)%s"
+                (refToPointer $ stripStatic $ rettype fun)
+                (funname fun)
+                (paramFormat (params fun))
+                (if semicolon then ";" else "")
 
 enumDeclaration :: String -> [EnumVal] -> String
 enumDeclaration ename evalues = 
