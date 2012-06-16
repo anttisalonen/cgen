@@ -47,11 +47,11 @@ data HsCType = HsCType {
   deriving (Show)
 
 -- descriptor on how to convert a haskell type to a c type
-data CConv = WithLambda String | CConvFunc String | NoCConv
+data CConv = WithLambda String | CConvFunc String Bool | NoCConv
   deriving (Show)
 
 -- descriptor on how to convert a c type to a haskell type
-data HsConv = HsConv String | NoHsConv
+data HsConv = HsConv String Bool | NoHsConv
   deriving (Show)
 
 data HsFun = HsFun {
@@ -206,7 +206,7 @@ cTypeToHsType enums t
   | otherwise =
       let entype = stripNamespace . correctType . stripExtra . stripConst $ t
       in if entype `elem` enums
-           then (CConvFunc (printf "%sToCInt" $ decapitalize entype), entype)
+           then (CConvFunc (printf "%sToCInt" $ decapitalize entype) False, entype)
            else
              case join $ fmap cleanCType $ cTypeToHs t of
                Nothing -> (NoCConv, printHsType enums t)
@@ -230,7 +230,8 @@ hsFunDefinition h = printf "%s %s = %s"
           mkCString (pnm, _) = printf "withCString %s $ \\c%s -> \n  " pnm pnm
           resLift = case retparam of
                       NoHsConv -> ""
-                      HsConv n -> "liftM " ++ n ++ " $ "
+                      HsConv n False -> "liftM " ++ n ++ " $ "
+                      HsConv n True  -> "(=<<) " ++ n ++ " $ "
           funcall = cPrefix ++ fn
           funparams = intercalate " " (map paramcall (zip inparams (map fst ptypes)))
           paramcall :: ((CConv, String), String) -> String
@@ -239,8 +240,8 @@ hsFunDefinition h = printf "%s %s = %s"
                                           then 'c' : pt
                                           else pt
                    (pprefix, psuffix) = case cv of
-                                          CConvFunc n  -> ("(" ++ n ++ " ", ")")
-                                          _            -> ("", "")
+                                          CConvFunc n _ -> ("(" ++ n ++ " ", ")")
+                                          _             -> ("", "")
       in concatMap mkCString cstrings ++ " " ++ resLift ++ " " ++ funcall ++ " " ++ funparams
 
 -- prints out the haskell function declaration and definition.
@@ -343,39 +344,39 @@ cPrefix :: String
 cPrefix = "c_"
 
 -- in: a c type, like "int"
--- out: the haskell conversion function for converting from haskell data type
+-- out: the haskell conversion function for converting from a haskell data type to this type
 convFunc :: String -> CConv
+convFunc ptype | (filter (/= ' ') . correctType . stripConst) ptype == "char*" = CConvFunc "peekCString" True
 convFunc ptype =
   case fromMaybe "" $ cTypeToHs ptype of
-    "CChar"   -> CConvFunc "castCCharToChar" 
-    "CSChar"  -> CConvFunc "fromIntegral" 
-    "CUChar"  -> CConvFunc "fromIntegral" 
-    "CShort"  -> CConvFunc "fromIntegral" 
-    "CUShort" -> CConvFunc "fromIntegral" 
-    "CInt"    -> CConvFunc "fromIntegral" 
-    "CUInt"   -> CConvFunc "fromIntegral" 
-    "CSize"   -> CConvFunc "fromIntegral" 
-    "CLong"   -> CConvFunc "fromIntegral" 
-    "CULong"  -> CConvFunc "fromIntegral" 
-    "CFloat"  -> CConvFunc "realToFrac" 
-    "CDouble" -> CConvFunc "realToFrac" 
-    "CBool"   -> CConvFunc "fromBool" 
+    "CChar"   -> CConvFunc "castCCharToChar" False
+    "CSChar"  -> CConvFunc "fromIntegral" False
+    "CUChar"  -> CConvFunc "fromIntegral" False
+    "CShort"  -> CConvFunc "fromIntegral" False
+    "CUShort" -> CConvFunc "fromIntegral" False
+    "CInt"    -> CConvFunc "fromIntegral" False
+    "CUInt"   -> CConvFunc "fromIntegral" False
+    "CSize"   -> CConvFunc "fromIntegral" False
+    "CLong"   -> CConvFunc "fromIntegral" False
+    "CULong"  -> CConvFunc "fromIntegral" False
+    "CFloat"  -> CConvFunc "realToFrac" False
+    "CDouble" -> CConvFunc "realToFrac" False
+    "CBool"   -> CConvFunc "fromBool" False
     _         -> NoCConv
 
 -- in: a c type, like "int"
--- out: the haskell conversion function for converting to haskell data type
+-- out: the haskell conversion function for converting this c type to a haskell data type
 convRevFunc :: [String] -> String -> HsConv
 convRevFunc enums t
-  | fromMaybe "" (cTypeToHs t) == "CBool" = HsConv "toBool"
+  | fromMaybe "" (cTypeToHs t) == "CBool" = HsConv "toBool" False
   | otherwise = 
-     let ccf = convFunc t
-     in case ccf of
-          CConvFunc n -> HsConv n
-          _           -> 
-            let entype = stripNamespace . correctType . stripExtra . stripConst $ t
-            in if entype `elem` enums
-                 then HsConv $ printf "cintTo%s" entype
-                 else NoHsConv
+     case convFunc t of
+       CConvFunc n iob -> HsConv n iob
+       _               ->
+         let entype = stripNamespace . correctType . stripExtra . stripConst $ t
+         in if entype `elem` enums
+              then HsConv (printf "cintTo%s" entype) False
+              else NoHsConv
 
 paramNames :: Int -> [String]
 paramNames n = map ('p':) (map show [1..n])
