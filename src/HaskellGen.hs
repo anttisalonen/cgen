@@ -349,7 +349,7 @@ convFunc :: String -> CConv
 convFunc ptype | (filter (/= ' ') . correctType . stripConst) ptype == "char*" = CConvFunc "peekCString" True
 convFunc ptype =
   case fromMaybe "" $ cTypeToHs ptype of
-    "CChar"   -> CConvFunc "castCCharToChar" False
+    "CChar"   -> CConvFunc "castCharToCChar" False
     "CSChar"  -> CConvFunc "fromIntegral" False
     "CUChar"  -> CConvFunc "fromIntegral" False
     "CShort"  -> CConvFunc "fromIntegral" False
