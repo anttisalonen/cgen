@@ -203,13 +203,15 @@ renameType rens t =
       tm = stripStatic $ stripExtra t
       mf1 = if isConst t then makeConst else id
       mf2 = makePtr (isPtr t)
-  in case mnt of
-       Nothing -> if '<' `elem` t && '>' `elem` t
-                    then handleTemplateTypes rens t
-                    else t
-       Just t' -> if isStatic (stripExtra t)
-                    then "static " ++ ((mf1 . mf2) t')
-                    else (mf1 . mf2) t'
+  in case lookup t rens of
+    Just t' -> t'
+    Nothing -> case lookup tm rens of
+                 Nothing -> if '<' `elem` t && '>' `elem` t
+                              then handleTemplateTypes rens t
+                              else t
+                 Just t' -> if isStatic (stripExtra t)
+                              then "static " ++ ((mf1 . mf2) t')
+                              else (mf1 . mf2) t'
 
 handleTemplateTypes :: [(String, String)] -> String -> String
 handleTemplateTypes rens t = 
