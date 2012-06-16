@@ -1,3 +1,10 @@
+0.0.5 - 2012-06-16
+- add handling of returned references
+- add handling for converting C strings to Haskell strings
+- fix bug in haskell code generation (thanks Greg)
+- add possibility to specify pointer types when renaming C++ types
+- small code cleanup
+
 0.0.4 - 2012-04-05
 - change function name mangling algorithm (parameter types are now appended
 to the function name)
