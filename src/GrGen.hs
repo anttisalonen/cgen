@@ -7,6 +7,7 @@ import System.Exit
 import System.Console.GetOpt
 import System.Directory
 import System.FilePath
+import System.IO (hPutStrLn, stderr)
 import Data.Either
 import Data.List
 import Control.Monad
@@ -19,6 +20,7 @@ import HeaderData
 import DeriveMod
 import HeaderParser
 import Options
+import Utils (usage)
 
 data Options = Options
   {
@@ -26,31 +28,33 @@ data Options = Options
   , interfacefile     :: String
   , excludepatterns   :: [String] 
   , includedir        :: FilePath
+  , showhelp          :: Bool
   }
   deriving (Show)
 $(deriveMods ''Options)
 
 defaultOptions :: Options
-defaultOptions = Options "" "" [] ""
+defaultOptions = Options "" "" [] "" False
 
 options :: [OptDescr (Options -> Options)]
 options = [
     Option ['o'] ["output"]        (ReqArg (setOutputfile) "file")                       "output file for the graph"
-  , Option []    ["interface"]     (ReqArg (setInterfacefile) "file")                    "define input interface file"
+  , Option ['i'] ["interface"]     (ReqArg (setInterfacefile) "file")                    "define input interface file"
   , Option []    ["exclude"]       (ReqArg (\l -> modExcludepatterns (l:)) "expression") "exclude pattern for class names"
   , Option ['I'] ["include"]       (ReqArg (setIncludedir) "Directory")                  "include path for the header files"
+  , Option []    ["help"]          (NoArg  (setShowhelp True))                           "display this help"
   ]
 
 main :: IO ()
 main = do 
   args <- getArgs
   let (actions, rest, errs) = getOpt Permute options args
+      prevopts              = foldl' (flip ($)) defaultOptions actions
+  when (showhelp prevopts) $
+    usage options ExitSuccess
   when (not (null errs) || null rest) $ do
-    mapM_ putStrLn errs
-    pr <- getProgName
-    putStrLn $ usageInfo ("Usage: " ++ pr ++ " <options> <C++ header files>") options
-    exitWith (ExitFailure 1)
-  let prevopts = foldl' (flip ($)) defaultOptions actions
+    mapM_ (hPutStrLn stderr) errs
+    usage options (ExitFailure 1)
   opts <- handleInterfaceFile (interfacefile prevopts) None handleOptionsLine prevopts
   contents <- mapM readFile (map (if null (includedir opts) then id else (includedir opts </>)) (nub rest))
   let parses = map parseHeader contents

@@ -38,12 +38,13 @@ data Options = Options
   , interfacefile     :: String
   , hsoutpath         :: Maybe FilePath
   , dumpmode          :: Bool
+  , showhelp          :: Bool
   }
   deriving (Show)
 $(deriveMods ''Options)
 
 defaultOptions :: Options
-defaultOptions = Options "" [] [] "" [] [] False [] [] "" Nothing False
+defaultOptions = Options "cgen" [] [] "" [] [] False [] [] "" Nothing False False
 
 options :: [OptDescr (Options -> Options)]
 options = [
@@ -54,9 +55,10 @@ options = [
   , Option []    ["exclude-class"] (ReqArg (\l -> modExcludeclasses  (l:)) "Class")     "exclude pattern for classes"
   , Option []    ["check-super"]   (NoArg  (setChecksuperclasses True))                 "report error if super classes aren't found"
   , Option []    ["rename"]        (ReqArg (addRenamedTypes) "oldtype|newtype")         "rename a type by another one"
-  , Option []    ["interface"]     (ReqArg (setInterfacefile) "file")                   "define input interface file"
+  , Option ['i'] ["interface"]     (ReqArg (setInterfacefile) "file")                   "define input interface file"
   , Option []    ["dump"]          (NoArg  (setDumpmode True))                          "simply dump the parsed data of the header"
   , Option ['I'] ["include"]       (ReqArg (setIncludedir) "Directory")                 "include path for the header files"
+  , Option []    ["help"]          (NoArg  (setShowhelp True))                          "display this help"
   ]
 
 addRenamedTypes :: String -> Options -> Options
@@ -69,12 +71,12 @@ main :: IO ()
 main = do 
   args <- getArgs
   let (actions, rest, errs) = getOpt Permute options args
+      prevopts              = foldl' (flip ($)) defaultOptions actions
+  when (showhelp prevopts) $
+    usage options ExitSuccess
   when (not (null errs) || null rest) $ do
-    mapM_ putStrLn errs
-    pr <- getProgName
-    putStrLn $ usageInfo ("Usage: " ++ pr ++ " <options> <C++ header files>") options
-    exitWith (ExitFailure 1)
-  let prevopts = foldl' (flip ($)) defaultOptions actions
+    mapM_ (hPutStrLn stderr) errs
+    usage options (ExitFailure 1)
   opts <- handleInterfaceFile (interfacefile prevopts) None handleOptionsLine prevopts
   contents <- mapM readFile (map (if null (includedir opts) then id else (includedir opts </>)) rest)
   let parses = map parseHeader contents
