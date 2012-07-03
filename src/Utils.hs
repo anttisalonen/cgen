@@ -6,6 +6,11 @@ import Data.Char
 import Text.Regex.Posix
 import Safe
 
+import System.Exit
+import System.Environment (getProgName)
+import System.IO (hPutStrLn, stdout, stderr)
+import System.Console.GetOpt
+
 toCapital = map toUpper
 
 capitalize []     = []
@@ -61,3 +66,11 @@ expand :: [(a, [b])] -> [(a, b)]
 expand = concat . foldr go []
   where go (a, bs) acc = zip (repeat a) bs : acc
 
+usage options code = do
+  pr <- getProgName
+  hPutStrLn handle $
+    usageInfo ("Usage: " ++ pr ++ " <options> <C++ header files>") options
+  exitWith code
+    where handle = case code of
+                     ExitSuccess -> stdout
+                     _           -> stderr

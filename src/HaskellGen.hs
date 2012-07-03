@@ -32,12 +32,13 @@ data Options = Options
   , inparameters      :: [String] 
   , outparameters     :: [String] 
   , hierarchy         :: String
+  , showhelp          :: Bool
   }
   deriving (Show)
 $(deriveMods ''Options)
 
 defaultOptions :: Options
-defaultOptions = Options "" "" "" "" [] [] [] [] [] ""
+defaultOptions = Options "cgen" "" "" "" [] [] [] [] [] "" False
 
 -- haskell c type descriptor, e.g. "Ptr CChar"
 data HsCType = HsCType {
