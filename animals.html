@@ -47,52 +47,77 @@
 			<h2>Animals - a simple example for cgen</h2>
 			<p>Here's the input, a library with animals.</p>
 			<pre>
-/* Animal.h */
+/* cpp/Animal.h */
+#ifndef ANIMALS_ANIMAL_H
+#define ANIMALS_ANIMAL_H
+
+#include &lt;iostream&gt;
+
 namespace Animals {
-class Animal {
-        public:
-                Animal()
-                        : age(0) { }
-                ~Animal() { }
-                virtual void make_sound() = 0;
-                int get_age() const
-                {
-                        return age; }
-                void increment_age()
-                {
-                        age++;
-                }
-        private:
-                int age;
-};
-
-/* Dog.h */
-class Dog : public Animal {
-        public:
-                Dog() { }
-                void make_sound()
-                {
-                        std::cout &lt;&lt; "Growl!\n";
-                }
-};
-
-/* Sheep.h */
-class Sheep : public Animal {
-        public:
-                Sheep(int wooliness_level_ = 0)
-                        : wooliness_level(wooliness_level_)
-                { }
-                void make_sound()
-                {
-                        std::cout &lt;&lt; "Baa!\n";
-                }
-                void shear()
-                { /* something */ }
-        private:
-                int wooliness_level;
-};
+	class Animal {
+		public:
+			Animal()
+				: age(0) { }
+			~Animal() { }
+			virtual void make_sound() = 0;
+			int get_age() const
+			{
+				return age; }
+			void increment_age()
+			{
+				age++;
+			}
+		private:
+			int age;
+	};
 }
-			</pre>
+
+#endif
+</pre><pre>
+/* cpp/Dog.h */
+#ifndef ANIMALS_DOG_H
+#define ANIMALS_DOG_H
+
+#include "Animal.h"
+
+namespace Animals {
+	class Dog : public Animal {
+		public:
+			Dog() { }
+			void make_sound()
+			{
+				std::cout &lt;&lt; "Growl!\n";
+			}
+	};
+}
+
+#endif
+</pre><pre>
+/* cpp/Sheep.h */
+#ifndef ANIMALS_SHEEP_H
+#define ANIMALS_SHEEP_H
+
+#include "Animal.h"
+
+namespace Animals {
+	class Sheep : public Animal {
+		public:
+			Sheep(int wooliness_level_ = 0)
+				: wooliness_level(wooliness_level_)
+			{ }
+			void make_sound()
+			{
+				std::cout &lt;&lt; "Baa!\n";
+			}
+			void shear()
+			{ /* something */ }
+		private:
+			int wooliness_level;
+	};
+}
+
+#endif
+</pre>
 			<h2>C wrapper generation and compilation</h2>
 			<p>The first thing to do is to create the C++ library with a C interface:</p>
 			<pre>
@@ -246,7 +271,7 @@ instance CAnimal Sheep where
 			<h2>Usage of the Haskell wrapper</h2>
 			<p>Then, the Haskell library can be used:</p>
 			<pre>
-$ cat Main.hs
+$ cat &gt; hs/Main.hs
 module Main
 where
 
@@ -266,11 +291,12 @@ main = do
       replicateM_ 5 $ animal_increment_age (toAnimal s)
       animal_get_age (toAnimal s) &gt;&gt;= \a -&gt; putStrLn $ "The sheep is now " ++
           show a ++ " years old!"
-			</pre>
+</pre>
 			<p>This can be compiled as follows (note linking against
 			the created static library as well as the C++ runtime):</p>
 			<pre>
-$ ghc --make -o Main -L. -lanimals -lstdc++ Main.hs</pre>
+$ cd hs
+$ ghc --make -o Main -L.. -lanimals -lstdc++ Main.hs</pre>
 			<p>Result:</p>
 			<pre>
 $ ./Main
