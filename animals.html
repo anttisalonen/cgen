@@ -62,7 +62,8 @@ namespace Animals {
 			virtual void make_sound() = 0;
 			int get_age() const
 			{
-				return age; }
+				return age;
+			}
 			void increment_age()
 			{
 				age++;
@@ -110,7 +111,9 @@ namespace Animals {
 				std::cout &lt;&lt; "Baa!\n";
 			}
 			void shear()
-			{ /* something */ }
+			{
+				/* something */
+			}
 		private:
 			int wooliness_level;
 	};
