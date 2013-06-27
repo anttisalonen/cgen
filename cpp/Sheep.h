@@ -15,7 +15,9 @@ namespace Animals {
 				std::cout << "Baa!\n";
 			}
 			void shear()
-			{ /* something */ }
+			{
+				/* something */
+			}
 		private:
 			int wooliness_level;
 	};

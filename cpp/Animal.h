@@ -13,7 +13,8 @@ namespace Animals {
 			virtual void make_sound() = 0;
 			int get_age() const
 			{
-				return age; }
+				return age;
+			}
 			void increment_age()
 			{
 				age++;
