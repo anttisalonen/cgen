@@ -1,4 +1,7 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE
+    TemplateHaskell
+  , FlexibleContexts
+  #-}
 module Main(main)
 where
 
@@ -30,7 +33,7 @@ data Options = Options
   , inputfiles        :: [FilePath]
   , includefiles      :: [FilePath]
   , includedir        :: FilePath
-  , excludepatterns   :: [String] 
+  , excludepatterns   :: [String]
   , excludebases      :: [String]
   , checksuperclasses :: Bool
   , renamedtypes      :: [(String, String)]
@@ -62,13 +65,13 @@ options = [
   ]
 
 addRenamedTypes :: String -> Options -> Options
-addRenamedTypes l = 
+addRenamedTypes l =
   case splitBy '|' l of
     [t1,t2] -> modRenamedtypes ((t1,t2):)
     _       -> id
 
 main :: IO ()
-main = do 
+main = do
   args <- getArgs
   let (actions, rest, errs) = getOpt Permute options args
       prevopts              = foldl' (flip ($)) defaultOptions actions
@@ -89,20 +92,20 @@ main = do
     []             -> do
       if dumpmode opts
         then print press
-        else do 
-          handleParses (outputdir opts) 
-                       (includefiles opts) 
-                       (excludepatterns opts) 
-                       (excludeclasses opts) 
-                       (if checksuperclasses opts 
-                          then Just (excludebases opts) 
-                          else Nothing) 
-                       (renamedtypes opts) 
+        else do
+          handleParses (outputdir opts)
+                       (includefiles opts)
+                       (excludepatterns opts)
+                       (excludeclasses opts)
+                       (if checksuperclasses opts
+                          then Just (excludebases opts)
+                          else Nothing)
+                       (renamedtypes opts)
                 $ zip (map takeFileName rest) press
           exitWith ExitSuccess
 
 handleOptionsLine :: String -> State InterfaceState (Options -> Options)
-handleOptionsLine = 
+handleOptionsLine =
   processor None
            [(Exclude,      \n -> modExcludepatterns (n:)),
             (Header,       \n -> modIncludefiles (n:)),
@@ -135,4 +138,3 @@ checkSuperClasses excls objs = do
         forM_ (S.toList missingrest) $ \s -> do
             hPrintf stderr "    %-40s\n" s
         exitWith (ExitFailure 3)
-

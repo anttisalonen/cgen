@@ -1,3 +1,7 @@
+{-# LANGUAGE
+    FlexibleContexts
+  #-}
+
 module HeaderParser(parseHeader)
 where
 
@@ -17,13 +21,13 @@ data HeaderState = HeaderState {
   }
   deriving (Eq, Read, Show)
 
-pushNamespace n = 
+pushNamespace n =
   updateState (\h -> h{namespacestack = n:(namespacestack h)})
 
 popNamespace =
   updateState (\h -> h{namespacestack = tail (namespacestack h)})
 
-pushClass n = 
+pushClass n =
   updateState (\h -> h{classstack = n:(classstack h)})
 
 popClass =
@@ -47,9 +51,9 @@ oneobj = do
   w <- gettype
   case w of
     "namespace" -> namespace (many1 oneobj)
-    "class"     -> classDecl 
+    "class"     -> classDecl
     "struct"    -> try structDecl <|> varFunDecl "struct"
-    "typedef"   -> typedef 
+    "typedef"   -> typedef
     "enum"      -> enum
     "extern"    -> extern
     "using"     -> using
@@ -229,7 +233,7 @@ inheritance = do
 capitalize [] = []
 capitalize (x:xs) = toUpper x : xs
 
-inheritl = do 
+inheritl = do
     spaces
     try (string "public" >> return Public) <|> try (string "protected" >> return Protected) <|> (string "private" >> return Private)
 
@@ -249,7 +253,7 @@ eos :: CharParser u ()
 eos = char ';' >> spaces >> many eos >> return ()
 
 setinheritlevel = do
-    str <- try (string "public") <|> try (string "protected") <|> string "private" 
+    str <- try (string "public") <|> try (string "protected") <|> string "private"
     spaces
     _ <- char ':'
     spaces
@@ -289,7 +293,7 @@ oprchars = try ((string"()") <|> many1 (oneOf "!+-=/*.-><[]|&"))
 getassign = do
     v1 <- getvalue
     spaces
-    v2 <- try (char '(' >> spaces >> char ')' >> return "()") 
+    v2 <- try (char '(' >> spaces >> char ')' >> return "()")
              <|> option "" (do
                    os <- concat <$> many1 oprchars
                    spaces
@@ -322,7 +326,7 @@ isOperator "operator" = True
 isOperator t          = takeWhile isAlpha (drop 2 (dropWhile (/= ':') t)) == "operator"
 
 getVisibility :: HeaderState -> Maybe (InheritLevel, String)
-getVisibility h = 
+getVisibility h =
   let cs = classstack h
   in case cs of
        (c:_) -> Just c
@@ -343,9 +347,9 @@ funDecl fn ft = do
     optional (many (identifier >> spaces))
     -- constructing member variables
     optional (char ':' >> many (many1 (digit <|> oneOf ("(.-+)[]" ++ typedefchars)) >> spaces))
-    abstr <- (char '{' >> ignoreBraces >> skipMany eos >> return False) <|> 
-             (eos >> return False) <|> 
-             (char '=' >> spaces >> char '0' >> 
+    abstr <- (char '{' >> ignoreBraces >> skipMany eos >> return False) <|>
+             (eos >> return False) <|>
+             (char '=' >> spaces >> char '0' >>
               spaces >> eos >> return True)
     spaces
     ns <- namespacestack <$> getState
@@ -369,7 +373,7 @@ paramDecl mv = do
       Nothing -> many1 (refMark <|> ptrStar <|> (gettype >>= \n -> spaces >> return n))
       Just v  -> return v
     spaces
-    val <- optionMaybe optionalParams 
+    val <- optionMaybe optionalParams
     arr <- optionMaybe (concat <$> many1 (between (char '[') (char ']') (many (noneOf "]")) >>= \v -> spaces >> return v))
     if '*' `elem` last pts
       -- pointer as "variable name" => no variable name given
@@ -378,11 +382,11 @@ paramDecl mv = do
 
 optionalParams = do
   _ <- char '='
-  spaces 
-  v <- getassign 
-  spaces 
+  spaces
+  v <- getassign
+  spaces
   r <- option "" (string "(" >> spaces >> string ")" >> return "()")
-  spaces 
+  spaces
   return (v ++ r)
 
 refMark :: CharParser u String
@@ -471,7 +475,7 @@ blockComment = do
   manyTill anyChar (try (string "*/"))
 
 eol :: CharParser u ()
-eol = 
+eol =
   (try (string "\r\n") >> return ()) <|> (oneOf "\r\n" >> return ())
 
 lineComment :: CharParser u String
@@ -480,13 +484,12 @@ lineComment = do
   manyTill anyChar (try eol)
 
 parseHeader :: String -> Either (String, ParseError) Header
-parseHeader input = 
+parseHeader input =
   case parse removeComments "removeComments" input of
     Left  err -> Left (input, err)
-    Right inp -> 
+    Right inp ->
       case runParser preprocess M.empty "preprocessor" inp of
         Left  err2 -> Left (inp, err2)
         Right prp  -> case runParser header (HeaderState [] []) "Header" prp of
                         Left err  -> Left (prp, err)
                         Right v   -> Right v
-

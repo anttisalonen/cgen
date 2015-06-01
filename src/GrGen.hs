@@ -1,4 +1,7 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE
+    TemplateHaskell
+  , FlexibleContexts
+  #-}
 module Main
 where
 
@@ -26,7 +29,7 @@ data Options = Options
   {
     outputfile        :: FilePath
   , interfacefile     :: String
-  , excludepatterns   :: [String] 
+  , excludepatterns   :: [String]
   , includedir        :: FilePath
   , showhelp          :: Bool
   }
@@ -46,7 +49,7 @@ options = [
   ]
 
 main :: IO ()
-main = do 
+main = do
   args <- getArgs
   let (actions, rest, errs) = getOpt Permute options args
       prevopts              = foldl' (flip ($)) defaultOptions actions
@@ -65,13 +68,13 @@ main = do
         putStrLn $ "Could not parse: " ++ show err
         exitWith (ExitFailure 1)
     []             -> do
-          handleParses (outputfile opts) 
-                       (excludepatterns opts) 
+          handleParses (outputfile opts)
+                       (excludepatterns opts)
                        (concat press)
           exitWith ExitSuccess
 
 handleOptionsLine :: String -> State InterfaceState (Options -> Options)
-handleOptionsLine = 
+handleOptionsLine =
   processor None
            [(Exclude,      \n -> modExcludepatterns (n:))]
            [("@exclude", Exclude)]
@@ -85,12 +88,11 @@ handleParses outfile excls objs = do
     writeFile outfile $ createGraphFile excls objs
 
 createGraphFile :: [String] -> [Object] -> String
-createGraphFile excls objs = 
+createGraphFile excls objs =
   let incclass n      = not $ or (map (\e -> n =~ e) excls)
-      mkline (ClassDecl cname inhs _ _ _) = 
+      mkline (ClassDecl cname inhs _ _ _) =
         if incclass cname
           then printf "%s|%s\n" cname (intercalate "," (map inheritname inhs))
           else ""
       mkline _ = ""
   in concatMap mkline $ filter (not . isEmptyClass) $ getClasses objs
-

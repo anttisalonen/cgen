@@ -2,3 +2,4 @@ tests/
 dist/
 .nix
 tmp/
+.cabal-sandbox/

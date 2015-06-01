@@ -1,4 +1,7 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE
+    TemplateHaskell
+  , FlexibleContexts
+  #-}
 module HaskellGen
 where
 
@@ -26,11 +29,11 @@ data Options = Options
   , interfacefile     :: String
   , inheritfile       :: FilePath
   , umbrellamodule    :: FilePath
-  , excludepatterns   :: [String] 
-  , defaultins        :: [String] 
-  , defaultouts       :: [String] 
-  , inparameters      :: [String] 
-  , outparameters     :: [String] 
+  , excludepatterns   :: [String]
+  , defaultins        :: [String]
+  , defaultouts       :: [String]
+  , inparameters      :: [String]
+  , outparameters     :: [String]
   , hierarchy         :: String
   , showhelp          :: Bool
   }
@@ -123,11 +126,11 @@ haskellGen opts objs = do
                         inherits = map (dropWhile (== ',')) $ groupBy (\_ b -> b /= ',') $ tailSafe inheritline
                     return (cname, inherits)
 
-            let hstypeset = (S.\\) (S.fromList (map hstypify hstypes)) (S.fromList enumnames) 
+            let hstypeset = (S.\\) (S.fromList (map hstypify hstypes)) (S.fromList enumnames)
                 inheritlist :: [(String, [String])]
                 inheritlist = M.toList . foldr (\(k, a) acc -> M.insertWith' (++) k [a] acc) M.empty . map swap . expand . catMaybes $
                   for inheritdata $ \(cname, superclasses) ->
-                      if hstypify cname `S.member` hstypeset 
+                      if hstypify cname `S.member` hstypeset
                          then Just (hstypify cname, catMaybes $ for superclasses $ \s ->
                                      if (s `S.member` hstypeset) then Just (hstypify s) else Nothing)
                          else Nothing
@@ -146,9 +149,9 @@ haskellGen opts objs = do
             let constructors = filter isConstructor allgenfuns
                 withfunnames = map withFunName constructors
             hPrintf h "{-# LANGUAGE ForeignFunctionInterface #-}\n"
-            hPrintf h "module %s%s(\n%s\n)\n\nwhere\n\nimport %sTypes\nimport Control.Monad\n\n" 
-                      modprefix 
-                      (takeBaseName file) 
+            hPrintf h "module %s%s(\n%s\n)\n\nwhere\n\nimport %sTypes\nimport Control.Monad\n\n"
+                      modprefix
+                      (takeBaseName file)
                       (intercalate ", \n" $ withfunnames ++ map hsfunname allgenfuns)
                       modprefix
             hPutStrLn h importForeign
@@ -158,7 +161,7 @@ haskellGen opts objs = do
 
     when (not . null $ umbrellamodule opts) $ do
         withFile (outdir </> (umbrellamodule opts)) WriteMode $ \h -> do
-            hPrintf h "module %s%s(\n  %s\n)\n\nwhere\n\n%s\n" 
+            hPrintf h "module %s%s(\n  %s\n)\n\nwhere\n\n%s\n"
                       modprefix
                       (takeBaseName $ umbrellamodule opts)
                       (intercalate ", \n  " $ concat expfuns)
@@ -172,10 +175,10 @@ cfunToHsFun :: [String] -> Options -> FilePath -> Object -> Either String HsFun
 cfunToHsFun enumnames opts filename (FunDecl fname rt ps _ _ _ _) =
   case catMaybes (map (typeValidMsg enumnames opts) (map (correctType . stripConst) (rt:pts))) of
     [] -> Right $
-        HsFun filename 
-              fname 
+        HsFun filename
+              fname
               (map (cTypeToHsCType enumnames) pts)
-              (cTypeToHsCType enumnames rt) 
+              (cTypeToHsCType enumnames rt)
               (decapitalize $ if '_' `elem` fname then dropWhile (== '_') $ dropWhile (/= '_') fname else fname)
               (map (cTypeToHsType enumnames) pts)
               ([(cTypeToHsType enumnames rt, convRevFunc enumnames rt)])
@@ -186,7 +189,7 @@ cfunToHsFun _ _ _ _ = Left "Given object is not a function"
 -- cTypeToHsCType "const char **" = HsCType CChar 2
 cTypeToHsCType :: [String] -> String -> HsCType
 cTypeToHsCType _     "void" = HsCType "()" 0
-cTypeToHsCType enums t      
+cTypeToHsCType enums t
   | (stripNamespace . correctType . stripExtra . stripConst $ t) `elem` enums = HsCType "CInt" 0
   | otherwise =
       case cTypeToHs t of
@@ -201,7 +204,7 @@ showHsCType h = hsPointerize (numptrs h) (hsname h)
 -- cTypeToHsType "const int **" = (CConvFunc "fromIntegral", "Int")
 cTypeToHsType :: [String] -> String -> (CConv, String)
 cTypeToHsType _     "void"  = (NoCConv, "()")
-cTypeToHsType enums t 
+cTypeToHsType enums t
   | correctType (stripConst t) == "char*"
      = (WithLambda "withCString", "String")
   | otherwise =
@@ -218,14 +221,14 @@ paramList = intercalate " " . paramNames . length . hsparams
 
 -- creates the Haskell function definition.
 hsFunDefinition :: HsFun -> String
-hsFunDefinition h = printf "%s %s = %s" 
-               (hsfunname h) 
+hsFunDefinition h = printf "%s %s = %s"
+               (hsfunname h)
                (paramList h)
                (hsFunDef (hsfunname h) (hsparams h) (snd $ head $ hsrettypes h))
 
   where
     hsFunDef :: String -> [(CConv, String)] -> HsConv -> String
-    hsFunDef fn inparams retparam = 
+    hsFunDef fn inparams retparam =
       let ptypes = zip (paramNames maxBound) (map (correctType . stripConst . snd) inparams)
           cstrings = filter (\(_, t) -> t == "String") ptypes
           mkCString (pnm, _) = printf "withCString %s $ \\c%s -> \n  " pnm pnm
@@ -264,14 +267,14 @@ addFun h hsf = do
   ffiHsFun hf = hsFFIFun (cfilename hf) (cfunname hf) (hsfunname hf) (map showHsCType (cparams hf)) (showHsCType (cretparam hf))
 
   hsFFIFun :: String -> String -> String -> [String] -> String -> String
-  hsFFIFun file fn cfn inparams retparam = printf "foreign import ccall \"%s %s\" %s%s :: %sIO %s" 
+  hsFFIFun file fn cfn inparams retparam = printf "foreign import ccall \"%s %s\" %s%s :: %sIO %s"
                             file fn cPrefix cfn
                             (printHsParams inparams)
                             (retparam)
 
   typeSigHsFun :: HsFun -> String
-  typeSigHsFun hf = 
-    printf "%s :: %sIO %s" 
+  typeSigHsFun hf =
+    printf "%s :: %sIO %s"
                       (hsfunname hf)
                       (typeSigList hf)
                       (hsFunRetType hf)
@@ -300,9 +303,9 @@ typeSigList hf = if null (hsparams hf) then "" else intercalate " -> " (map snd 
 typeValidMsg :: [String] -> Options -> String -> Maybe String
 typeValidMsg enums opts t = validateAll [(t /= "void*", "Void pointer not supported"),
                                (not (isTemplate t), "Template types not supported"),
-                               ((any (==(stripNamespace t)) enums || 
-                                t == "void" || 
-                                isStdType t || 
+                               ((any (==(stripNamespace t)) enums ||
+                                t == "void" ||
+                                isStdType t ||
                                 isPtr t > 0), "type " ++ t ++ " is a value of a non-standard type"),
                                (hasDir, "direction for the type " ++ t ++ " has not been defined in the interface file")]
   where validateAll = foldl' validate Nothing
@@ -370,7 +373,7 @@ convFunc ptype =
 convRevFunc :: [String] -> String -> HsConv
 convRevFunc enums t
   | fromMaybe "" (cTypeToHs t) == "CBool" = HsConv "toBool" False
-  | otherwise = 
+  | otherwise =
      case convFunc t of
        CConvFunc n iob -> HsConv n iob
        _               ->
@@ -385,14 +388,14 @@ paramNames n = map ('p':) (map show [1..n])
 -- printHsType "const char **" = "(Ptr (Ptr CChar))"
 printHsType :: [String] -> String -> String
 printHsType _     "void" = "()"
-printHsType enums t      = 
+printHsType enums t      =
   case cTypeToHs t of
     Nothing -> hsPointerize (isPtr ct - 1) $ capitalize . fixNamespace enums . correctType . stripConst $ t
     Just t' -> hsPointerize (isPtr ct) t'
  where ct = correctType . stripConst $ t
 
 hsPointerize :: Int -> String -> String
-hsPointerize numPtrs t = 
+hsPointerize numPtrs t =
   concat (replicate numPtrs "(Ptr ") ++ (stripPtr t) ++ concat (replicate numPtrs ")")
 
 cTypeToHs :: String -> Maybe String
@@ -451,7 +454,5 @@ cleanCType _ = Nothing
 
 printHsParams :: [String] -> String
 printHsParams [] = ""
-printHsParams types = 
-  intercalate " -> " types ++ " -> " 
-
-
+printHsParams types =
+  intercalate " -> " types ++ " -> "
