@@ -11,7 +11,6 @@ import Text.Printf
 import System.IO
 import System.FilePath
 import Control.Monad
-import Control.Applicative
 import qualified Data.Set as S
 import qualified Data.Map as M
 

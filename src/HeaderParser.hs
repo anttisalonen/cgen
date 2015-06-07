@@ -8,7 +8,6 @@ where
 import Data.List
 import Data.Maybe
 import Data.Char
-import Control.Applicative hiding (many, (<|>), optional)
 import qualified Data.Map as M
 
 import Text.ParserCombinators.Parsec
