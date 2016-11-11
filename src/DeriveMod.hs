@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 module DeriveMod(deriveMod, deriveSMod, deriveMods, modify)
 where
 
@@ -61,7 +62,11 @@ mkModM crf d = do
 
 -- get the fields of a data type.
 dToFs d = do
-  TyConI (DataD _ _ _ cons _) <- reify d
+#if (__GLASGOW_HASKELL__ > 710)
+  TyConI (DataD _ _ _ _ cons _) <- reify d
+#else
+  TyConI (DataD   _ _ _ cons _) <- reify d
+#endif
   return $ concatMap getF cons
 
 deriveMods :: Name -> Q [Dec]
